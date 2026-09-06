@@ -1,0 +1,6 @@
+# RS3 Assistant Bot
+mss>=9.0            # fast screen grabbing
+numpy>=1.24         # pixel math
+opencv-python>=4.8  # setup window + debug readout
+pynput>=1.7         # global hotkeys (F12 pause, triple-Esc stop)
+pyobjc-framework-Quartz>=9.0  # macOS: find the game window + send key presses

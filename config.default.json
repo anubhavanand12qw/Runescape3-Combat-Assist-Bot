@@ -1,0 +1,234 @@
+{
+  "_comment": "Boxes are fractions of the RuneScape window. Measured on live 1710x988 window.",
+  "regions": {
+    "_comment": "[x, y, w, h] as fractions of the game window \u2014 set by calibrate.py / autocal / fullscreen measure",
+    "hp_bar": [
+      0.364912,
+      0.910931,
+      0.052632,
+      0.004049
+    ],
+    "adren_bar": [
+      0.439181,
+      0.910931,
+      0.052047,
+      0.004049
+    ],
+    "adren_text": [
+      0.436257,
+      0.893725,
+      0.032164,
+      0.015182
+    ]
+  },
+  "hp_inner_width": 90,
+  "adren_zero_ref": "reference/adren_zero.npy",
+  "text_threshold": 4.0,
+  "eat_below_pct": 50,
+  "retarget_above_hp_pct": 50,
+  "food_key": "0",
+  "eat_cooldown_s": 3.0,
+  "eat_max_failures": 2,
+  "eat_success_delta_pct": 0.5,
+  "_ability_note": "EMPTY = no ability keys. Example: [\"1\", \"2\"]",
+  "ability_keys": [],
+  "global_cooldown_s": 1.8,
+  "key_mode": "hid",
+  "loop_hz": 20,
+  "overlay": true,
+  "aoi_overlay": true,
+  "behavior": {
+    "_comment": "Toggle live in the RS3 bot overlay (or keys b / e). attack_style: bot|human. eat_mode: low_hp|in_combat",
+    "attack_style": "bot",
+    "eat_mode": "low_hp"
+  },
+  "human": {
+    "_comment": "Used only when behavior.attack_style is human. Combat clicks stay tight — NPCs move.",
+    "pre_key_delay_s": [
+      0.04,
+      0.14
+    ],
+    "key_hold_s": [
+      0.05,
+      0.12
+    ],
+    "post_key_delay_s": [
+      0.04,
+      0.16
+    ],
+    "pre_move_delay_s": [
+      0.02,
+      0.08
+    ],
+    "mouse_path_steps": [
+      12,
+      24
+    ],
+    "mouse_step_sleep_s": [
+      0.003,
+      0.008
+    ],
+    "mouse_jitter_px": 0.8,
+    "click_path_steps": [
+      18,
+      32
+    ],
+    "click_step_sleep_s": [
+      0.005,
+      0.012
+    ],
+    "click_jitter_px": 0.5,
+    "aim_settle_s": [
+      0.02,
+      0.06
+    ],
+    "aim_correct_chance": 0.0,
+    "aim_correct_px": 1,
+    "click_hold_s": [
+      0.04,
+      0.08
+    ],
+    "post_click_delay_s": [
+      0.05,
+      0.12
+    ],
+    "wander_path_steps": [
+      22,
+      40
+    ],
+    "wander_step_sleep_s": [
+      0.008,
+      0.018
+    ],
+    "wander_jitter_px": 1.6,
+    "wait_wander_interval_s": [
+      2.5,
+      6.0
+    ],
+    "wait_wander_pad_px": 36,
+    "wait_wander_min_dist_px": 70,
+    "ability_gcd_jitter_s": [
+      -0.1,
+      0.25
+    ],
+    "break_every_actions": [
+      18,
+      36
+    ],
+    "break_max_gap_s": [
+      60,
+      150
+    ],
+    "break_duration_s": [
+      0.4,
+      1.2
+    ],
+    "break_chance": 0.55,
+    "break_fidget_chance": 0.35,
+    "idle_fidget_chance": 0.008
+  },
+  "combat": {
+    "_comment": "Legacy adrenaline-text fighting signal (used only without probes)",
+    "hp_drop_window_s": 3.0,
+    "hp_drop_min_frac": 0.005
+  },
+  "probes": {
+    "_comment": "Set in mark.py: h=health (change→eat), d=adren (change→fight), t=target bar (match→attack). Empty until marked.",
+    "tolerance": 28,
+    "health": null,
+    "adrenaline": null,
+    "target_bar": null
+  },
+  "target_bar": {
+    "_comment": "Top target-info bar frame (dark charcoal + tan border). NOT the green HP fill.",
+    "roi_frac": [
+      0.2,
+      0.0,
+      0.8,
+      0.1
+    ],
+    "interior_bgr_low": [
+      8,
+      8,
+      8
+    ],
+    "interior_bgr_high": [
+      35,
+      38,
+      42
+    ],
+    "border_bgr_low": [
+      20,
+      35,
+      45
+    ],
+    "border_bgr_high": [
+      80,
+      110,
+      140
+    ],
+    "border_r_minus_b_min": 15,
+    "min_width_px": 150,
+    "min_height_px": 8,
+    "max_height_px": 50,
+    "min_border_px": 40,
+    "min_roi_height_px": 40,
+    "morph_kernel_w": 15
+  },
+  "aoi": {
+    "_note": "Mark with: python3 mark.py  (v=search, a=fence, z=colours, s=save)",
+    "deadzone_frac": 0.055,
+    "lock_mode": "cyan_marker",
+    "polygon": [],
+    "polygon_offset": [],
+    "search_rect": null,
+    "default_search_frac": [
+      0.05,
+      0.08,
+      0.68,
+      0.78
+    ],
+    "marker": {
+      "hsv_low": [
+        88,
+        40,
+        100
+      ],
+      "hsv_high": [
+        125,
+        255,
+        255
+      ],
+      "min_area": 25,
+      "max_area": 5000,
+      "blink_period_s": 0.5,
+      "holdover_s": 0.6,
+      "arm_window_s": 2.5,
+      "lost_after_s": 1.2,
+      "template_path": "reference/markers/cyan_marker_crop.png",
+      "template_threshold": 0.62,
+      "template_scales": [
+        0.5,
+        0.65,
+        0.8,
+        1.0,
+        1.2,
+        1.4
+      ]
+    }
+  },
+  "targeting": {
+    "enabled": true,
+    "click_nearest": false,
+    "target_bar_arm_s": 3.0,
+    "retarget_cooldown_s": 3.0,
+    "miss_skip_radius_px": 55,
+    "min_blob_area": 180,
+    "max_blob_area": 25000,
+    "relative_area_frac": 0.35,
+    "color_tolerance": 10,
+    "exclude_tolerance": 12,
+    "zombie_colors_bgr": [],
+    "zombie_exclude_bgr": []
+  }
+}
