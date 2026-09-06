@@ -1,0 +1,4 @@
+{"t": 1788697463.8, "action": "click", "x": 630, "y": 366, "targets": 4, "area": 1639, "mode": "densest", "gate": "READY", "lock": 0.676, "dry_run": false}
+{"t": 1788697465.442, "action": "click", "x": 602, "y": 297, "targets": 2, "area": 3454, "mode": "densest", "gate": "RETRY", "lock": 0.676, "dry_run": false}
+{"t": 1788697487.793, "action": "click", "x": 1014, "y": 1029, "targets": 1, "area": 11267, "mode": "densest", "gate": "READY", "lock": 0.931, "dry_run": false}
+{"t": 1788697488.85, "hp": 0.0, "adren": 0.0, "fighting": true, "key": "0", "dry_run": false}

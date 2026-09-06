@@ -1,0 +1,6 @@
+{"t": 1788699862.548, "action": "click", "x": 737, "y": 358, "targets": 5, "area": 636, "mode": "densest", "gate": "READY", "lock": 0.626, "dry_run": false}
+{"t": 1788699871.391, "action": "click", "x": 1046, "y": 951, "targets": 1, "area": 8631, "mode": "densest", "gate": "READY", "lock": 0.931, "dry_run": false}
+{"t": 1788699872.895, "action": "click", "x": 1047, "y": 954, "targets": 1, "area": 8183, "mode": "densest", "gate": "READY", "lock": 0.673, "dry_run": false}
+{"t": 1788699874.416, "action": "click", "x": 1047, "y": 954, "targets": 1, "area": 8183, "mode": "densest", "gate": "READY", "lock": 0.791, "dry_run": false}
+{"t": 1788699875.923, "action": "click", "x": 1083, "y": 1014, "targets": 2, "area": 3429, "mode": "densest", "gate": "RETRY", "lock": 0.791, "dry_run": false}
+{"t": 1788699877.441, "action": "click", "x": 1064, "y": 972, "targets": 1, "area": 12034, "mode": "densest", "gate": "READY", "lock": 0.931, "dry_run": false}

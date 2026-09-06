@@ -1,0 +1,8 @@
+{"t": 1788699651.744, "action": "click", "x": 664, "y": 480, "targets": 4, "area": 609, "mode": "densest", "gate": "READY", "lock": 0.931, "dry_run": false}
+{"t": 1788699653.336, "action": "click", "x": 764, "y": 512, "targets": 4, "area": 570, "mode": "densest", "gate": "RETRY", "lock": 0.931, "dry_run": false}
+{"t": 1788699660.708, "action": "click", "x": 571, "y": 304, "targets": 2, "area": 5482, "mode": "densest", "gate": "READY", "lock": 0.622, "dry_run": false}
+{"t": 1788699662.228, "action": "click", "x": 954, "y": 942, "targets": 1, "area": 5074, "mode": "densest", "gate": "RETRY", "lock": 0.931, "dry_run": false}
+{"t": 1788699663.768, "action": "click", "x": 1026, "y": 956, "targets": 1, "area": 11206, "mode": "densest", "gate": "RETRY", "lock": 0.673, "dry_run": false}
+{"t": 1788699675.464, "action": "click", "x": 1041, "y": 948, "targets": 1, "area": 10465, "mode": "densest", "gate": "READY", "lock": 0.931, "dry_run": false}
+{"t": 1788699677.014, "action": "click", "x": 885, "y": 717, "targets": 3, "area": 1098, "mode": "densest", "gate": "RETRY", "lock": 0.931, "dry_run": false}
+{"t": 1788699685.888, "hp": 0.0, "adren": 0.0, "fighting": false, "key": "0", "dry_run": false}

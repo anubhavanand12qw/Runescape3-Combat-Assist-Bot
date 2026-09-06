@@ -1,0 +1,11 @@
+{"t": 1788700160.621, "action": "click", "x": 945, "y": 527, "targets": 2, "area": 932, "mode": "densest", "gate": "READY", "lock": 0.653, "dry_run": false}
+{"t": 1788700162.193, "action": "click", "x": 580, "y": 410, "targets": 3, "area": 709, "mode": "densest", "gate": "RETRY", "lock": 0.658, "dry_run": false}
+{"t": 1788700163.721, "action": "click", "x": 670, "y": 387, "targets": 1, "area": 6525, "mode": "densest", "gate": "RETRY", "lock": 0.931, "dry_run": false}
+{"t": 1788700165.238, "action": "click", "x": 1198, "y": 807, "targets": 3, "area": 1105, "mode": "densest", "gate": "RETRY", "lock": 0.791, "dry_run": false}
+{"t": 1788700175.505, "action": "click", "x": 652, "y": 388, "targets": 1, "area": 6091, "mode": "densest", "gate": "READY", "lock": 0.791, "dry_run": false}
+{"t": 1788700177.077, "action": "click", "x": 1162, "y": 739, "targets": 1, "area": 547, "mode": "densest", "gate": "RETRY", "lock": 0.931, "dry_run": false}
+{"t": 1788700185.849, "action": "click", "x": 796, "y": 475, "targets": 5, "area": 527, "mode": "densest", "gate": "READY", "lock": 0.931, "dry_run": false}
+{"t": 1788700202.557, "action": "click", "x": 1189, "y": 807, "targets": 4, "area": 791, "mode": "densest", "gate": "READY", "lock": 0.931, "dry_run": false}
+{"t": 1788700204.094, "action": "click", "x": 1138, "y": 898, "targets": 3, "area": 581, "mode": "densest", "gate": "RETRY", "lock": 0.673, "dry_run": false}
+{"t": 1788700215.849, "action": "click", "x": 533, "y": 406, "targets": 2, "area": 544, "mode": "densest", "gate": "READY", "lock": 0.931, "dry_run": false}
+{"t": 1788700224.986, "action": "click", "x": 980, "y": 690, "targets": 2, "area": 308, "mode": "densest", "gate": "READY", "lock": 0.931, "dry_run": false}

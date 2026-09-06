@@ -1,0 +1,20 @@
+{"t": 1788699704.411, "hp": 0.0, "adren": 0.0, "fighting": false, "key": "0", "dry_run": false}
+{"t": 1788699706.162, "action": "click", "x": 586, "y": 412, "targets": 6, "area": 761, "mode": "densest", "gate": "READY", "lock": 0.666, "dry_run": false}
+{"t": 1788699707.689, "action": "click", "x": 851, "y": 783, "targets": 2, "area": 2562, "mode": "densest", "gate": "RETRY", "lock": 0.673, "dry_run": false}
+{"t": 1788699709.202, "action": "click", "x": 1203, "y": 689, "targets": 4, "area": 1134, "mode": "densest", "gate": "RETRY", "lock": 0.791, "dry_run": false}
+{"t": 1788699719.52, "action": "click", "x": 956, "y": 527, "targets": 7, "area": 764, "mode": "densest", "gate": "READY", "lock": 0.791, "dry_run": false}
+{"t": 1788699721.07, "action": "click", "x": 555, "y": 262, "targets": 5, "area": 565, "mode": "densest", "gate": "RETRY", "lock": 0.931, "dry_run": false}
+{"t": 1788699727.244, "action": "click", "x": 1080, "y": 956, "targets": 1, "area": 5605, "mode": "densest", "gate": "READY", "lock": 0.791, "dry_run": false}
+{"t": 1788699728.747, "action": "click", "x": 1074, "y": 953, "targets": 1, "area": 5012, "mode": "densest", "gate": "READY", "lock": 0.791, "dry_run": false}
+{"t": 1788699730.266, "action": "click", "x": 1074, "y": 953, "targets": 1, "area": 5012, "mode": "densest", "gate": "READY", "lock": 0.931, "dry_run": false}
+{"t": 1788699731.775, "action": "click", "x": 1074, "y": 953, "targets": 1, "area": 5012, "mode": "densest", "gate": "READY", "lock": 0.931, "dry_run": false}
+{"t": 1788699733.281, "action": "click", "x": 1074, "y": 953, "targets": 1, "area": 5012, "mode": "densest", "gate": "READY", "lock": 0.791, "dry_run": false}
+{"t": 1788699740.946, "action": "click", "x": 1074, "y": 953, "targets": 1, "area": 5012, "mode": "densest", "gate": "READY", "lock": 0.931, "dry_run": false}
+{"t": 1788699742.49, "action": "click", "x": 1075, "y": 941, "targets": 1, "area": 6327, "mode": "densest", "gate": "READY", "lock": 0.931, "dry_run": false}
+{"t": 1788699744.154, "action": "click", "x": 1073, "y": 943, "targets": 1, "area": 6223, "mode": "densest", "gate": "READY", "lock": 0.931, "dry_run": false}
+{"t": 1788699745.655, "action": "click", "x": 1074, "y": 943, "targets": 1, "area": 6129, "mode": "densest", "gate": "READY", "lock": 0.791, "dry_run": false}
+{"t": 1788699747.169, "action": "click", "x": 1073, "y": 948, "targets": 1, "area": 5811, "mode": "densest", "gate": "READY", "lock": 0.791, "dry_run": false}
+{"t": 1788699759.845, "action": "click", "x": 1075, "y": 948, "targets": 1, "area": 5835, "mode": "densest", "gate": "READY", "lock": 0.931, "dry_run": false}
+{"t": 1788699761.402, "action": "click", "x": 1073, "y": 948, "targets": 1, "area": 5811, "mode": "densest", "gate": "READY", "lock": 0.931, "dry_run": false}
+{"t": 1788699762.92, "action": "click", "x": 1074, "y": 948, "targets": 1, "area": 5830, "mode": "densest", "gate": "READY", "lock": 0.931, "dry_run": false}
+{"t": 1788699764.476, "action": "click", "x": 1073, "y": 948, "targets": 1, "area": 5811, "mode": "densest", "gate": "READY", "lock": 0.673, "dry_run": false}
