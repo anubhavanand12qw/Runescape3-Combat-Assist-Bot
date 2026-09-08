@@ -101,13 +101,19 @@ python3 mark.py
 
 | Key | Click | Runtime meaning |
 |---|---|---|
-| `h` | Red health fill at your eat threshold | Colour **changes** → press food `0` |
+| `h` | Red health fill at your eat threshold | Colour **changes** → press food (default `[`) |
 | `d` | Empty adrenaline bar (0%) | Colour **changes** → fighting |
-| `t` | Top target-info bar while engaged | Colour **matches** → under attack |
+| `t` | Top target-info bar while engaged (pick a distinctive pixel) | Colour **matches** → under attack / kill count |
+| `l` | Loot UI button (optional) | Used when Loot **always** + Inv box **on** |
+| `i` | Blank inventory slot (optional) | Same as `l` |
 
 Then `s` to save. Next `mark.py` run reloads probes automatically.
 
+Keep `probes.tolerance` fairly tight (around **10**) so idle background is not mistaken for the target bar.
+
 `run.py` skips bar auto-cal when probes are set.
+
+**Method → free** does not need the cyan V / fence; still mark zombie colours (`z`) and probes (`h`/`d`/`t`).
 
 ---
 
@@ -185,13 +191,17 @@ tighter **`v` search box** (exclude minimap) and save again.
 python3 run.py
 ```
 
-Eats under 50% HP (`food_key` `"0"`). Clicks the densest in-fence enemy colour
-blob when the **top target-info bar frame is gone** and HP is **above 50%**
-(no fixed click delay — the bar itself is the gate).
+Eats when the health probe changes (`food_key` default `"["`). After two failed
+eats, **SAFE STOP** pauses loot, bury, and combat until HP stays OK briefly.
 
-The top bar is detected by its **dark charcoal shell + tan border** (not the
-green HP fill). Ability keys still use the separate adrenaline-based fighting
-signal.
+Clicks when the target-bar probe is clear (and HP OK), with a post-clear watch
+window before the next click. Prefer **nearest-to-centre** blobs when configured.
+Pre-click pixel verify aborts if the NPC colour walked away.
+
+Loot (Space) and bury (`]`) modes: `off` / after combat / always — see overlay.
+Food, loot, and bury always use human key timing.
+
+Overlay shows **kills** and **kills/hr** from target-bar clear count this session.
 
 To enable abilities later, edit `config.json`:
 
@@ -207,6 +217,8 @@ Leave it `[]` until dry-run looks solid.
 
 | Key | Action |
 |---|---|
+| Overlay clicks / `b` `m` `e` `o` `i` `u` `s` | Attack, method, eat, loot, inv, bury, free still |
+| Overlay `+/−` rows | Bar wait, hard hold, still time, bar arm, loot/bury gaps |
 | `F12` | pause / resume |
 | Esc ×3 quickly | stop |
 | `q` (overlay focused) | stop |
@@ -227,12 +239,16 @@ Bot auto-pauses when RuneScape is not the front window.
 | Fence follows player | Search box includes minimap — press `v`, keep minimap **out**, save |
 | Yellow cross on minimap | Same as above; V must be the floor template, not UI cyan |
 | Clicks bones / floor / loot | Densest blob should prefer enemies; raise `min_blob_area`, re-sample `z` on body only, right-click exclude bones |
-| Clicks while already fighting | Top target bar frame still detected — check overlay says TARGET BAR; bar must fully disappear |
-| Never clicks after a kill | HP must be > 50%; overlay WAIT HP until you eat / recover |
+| Clicks while already fighting | Target probe still matching — remake `t`, lower `probes.tolerance` |
+| FREE hard-limit spam | Sticky target probe or fights longer than hard hold — fix `t` or raise Hard hold |
+| Never clicks after a kill | HP probe / SAFE STOP / cooldown watch — check overlay status |
+| SAFE STOP stuck | Restock food; remake health probe `h`; wait for HP OK hold |
+| Space / ] during cooldown | Expected mute during bar wait / human break / SAFE STOP |
 | Clicks your character | Raise `aoi.deadzone_frac` (e.g. `0.07`) |
-| HP % wrong | `python3 calibrate.py` |
+| HP % wrong | Prefer probes (`h`); else `python3 calibrate.py` |
 | After camera zoom fence drifts | Re-run `mark.py` (offsets are zoom-specific) |
 | Save blocked: missing crop | Restore `reference/markers/cyan_marker_crop.png` |
+| Want no cyan V | Overlay Method → **free** |
 
 ---
 

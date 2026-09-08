@@ -26,10 +26,11 @@
   "text_threshold": 4.0,
   "eat_below_pct": 50,
   "retarget_above_hp_pct": 50,
-  "food_key": "0",
+  "food_key": "[",
   "eat_cooldown_s": 3.0,
   "eat_max_failures": 2,
   "eat_success_delta_pct": 0.5,
+  "eat_resume_hold_s": 1.5,
   "_ability_note": "EMPTY = no ability keys. Example: [\"1\", \"2\"]",
   "ability_keys": [],
   "global_cooldown_s": 1.8,
@@ -38,12 +39,33 @@
   "overlay": true,
   "aoi_overlay": true,
   "behavior": {
-    "_comment": "Toggle live in the RS3 bot overlay (or keys b / e). attack_style: bot|human. eat_mode: low_hp|in_combat",
+    "_comment": "Overlay: b/m/e/o/i/u. free_require_still false=no 2s wait (pre-click verify still runs). bury_mode: off|after_combat|always.",
     "attack_style": "bot",
-    "eat_mode": "low_hp"
+    "attack_method": "pixel",
+    "eat_mode": "low_hp",
+    "loot_mode": "off",
+    "loot_use_inv": false,
+    "bury_mode": "off",
+    "free_require_still": false
+  },
+  "loot": {
+    "_comment": "after_combat/target: Space when target bar clears. always: Space every always_interval_s (random). always + loot_use_inv true: probe-gated with same gap. post_combat_delay_s = reaction wait.",
+    "loot_key": "space",
+    "cooldown_s": 1.2,
+    "always_interval_s": [2.0, 5.0],
+    "after_combat_window_s": 4.0,
+    "post_combat_delay_s": [0.25, 0.75]
+  },
+  "bury": {
+    "_comment": "Bury bones key (human timing). Modes mirror loot. always_interval_s independent of loot.",
+    "bury_key": "]",
+    "cooldown_s": 1.2,
+    "always_interval_s": [2.0, 5.0],
+    "after_combat_window_s": 4.0,
+    "post_combat_delay_s": [0.25, 0.75]
   },
   "human": {
-    "_comment": "Used only when behavior.attack_style is human. Combat clicks stay tight — NPCs move.",
+    "_comment": "Human key timing is always used for food + loot. Mouse paths apply when attack_style is human.",
     "pre_key_delay_s": [
       0.04,
       0.14
@@ -133,11 +155,13 @@
     "hp_drop_min_frac": 0.005
   },
   "probes": {
-    "_comment": "Set in mark.py: h=health (change→eat), d=adren (change→fight), t=target bar (match→attack). Empty until marked.",
+    "_comment": "Set in mark.py: h=health (change→eat), d=adren (change→fight), t=target bar (match→attack), l=loot button, i=blank inventory. Empty until marked.",
     "tolerance": 28,
     "health": null,
     "adrenaline": null,
-    "target_bar": null
+    "target_bar": null,
+    "loot_button": null,
+    "loot_inventory": null
   },
   "target_bar": {
     "_comment": "Top target-info bar frame (dark charcoal + tan border). NOT the green HP fill.",
@@ -190,12 +214,12 @@
     ],
     "marker": {
       "hsv_low": [
-        88,
-        40,
-        100
+        91,
+        110,
+        95
       ],
       "hsv_high": [
-        125,
+        104,
         255,
         255
       ],
@@ -206,7 +230,7 @@
       "arm_window_s": 2.5,
       "lost_after_s": 1.2,
       "template_path": "reference/markers/cyan_marker_crop.png",
-      "template_threshold": 0.62,
+      "template_threshold": 0.42,
       "template_scales": [
         0.5,
         0.65,
@@ -219,10 +243,16 @@
   },
   "targeting": {
     "enabled": true,
-    "click_nearest": false,
+    "click_nearest": true,
     "target_bar_arm_s": 3.0,
-    "retarget_cooldown_s": 3.0,
+    "retarget_cooldown_s": [4.5, 6.0],
+    "free_max_bar_hold_s": 40.0,
+    "free_force_delay_s": [0.25, 0.7],
+    "force_retarget_skip_radius_px": 100,
     "miss_skip_radius_px": 55,
+    "pre_click_verify_radius_px": 2,
+    "static_still_s": 2.0,
+    "static_match_radius_px": 28,
     "min_blob_area": 180,
     "max_blob_area": 25000,
     "relative_area_frac": 0.35,

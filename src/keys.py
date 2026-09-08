@@ -25,6 +25,8 @@ KEYCODES: dict[str, int] = {
     "1": 18, "2": 19, "3": 20, "4": 21, "5": 23,
     "6": 22, "7": 26, "8": 28, "9": 25, "0": 29,
     "-": 27, "=": 24,
+    "[": 33, "]": 30,
+    "space": 49,
 }
 
 # How long a key stays held down, in seconds. Randomised inside this range so the
@@ -80,6 +82,17 @@ def press(key: str, mode: str = "hid", pid: int | None = None,
 CLICK_HOLD_RANGE = (0.040, 0.090)
 
 
+def move_to(x: int, y: int, mode: str = "hid", pid: int | None = None) -> None:
+    """Move the cursor to absolute screen coordinates without clicking."""
+    source = Quartz.CGEventSourceCreate(
+        Quartz.kCGEventSourceStateHIDSystemState
+    )
+    move = Quartz.CGEventCreateMouseEvent(
+        source, Quartz.kCGEventMouseMoved, (x, y),
+        Quartz.kCGMouseButtonLeft)
+    _post(move, mode, pid)
+
+
 def click(x: int, y: int, mode: str = "hid", pid: int | None = None,
           hold: float | None = None) -> None:
     """Left-click at absolute screen coordinates (macOS points).
@@ -103,6 +116,23 @@ def click(x: int, y: int, mode: str = "hid", pid: int | None = None,
 
     _post(move, mode, pid)
     time.sleep(random.uniform(0.010, 0.030))
+    _post(down, mode, pid)
+    time.sleep(hold if hold is not None else random.uniform(*CLICK_HOLD_RANGE))
+    _post(up, mode, pid)
+
+
+def click_down_up(x: int, y: int, mode: str = "hid", pid: int | None = None,
+                  hold: float | None = None) -> None:
+    """Left button down/up at ``(x, y)`` without an extra move (cursor already there)."""
+    source = Quartz.CGEventSourceCreate(
+        Quartz.kCGEventSourceStateHIDSystemState
+    )
+    down = Quartz.CGEventCreateMouseEvent(
+        source, Quartz.kCGEventLeftMouseDown, (x, y),
+        Quartz.kCGMouseButtonLeft)
+    up = Quartz.CGEventCreateMouseEvent(
+        source, Quartz.kCGEventLeftMouseUp, (x, y),
+        Quartz.kCGMouseButtonLeft)
     _post(down, mode, pid)
     time.sleep(hold if hold is not None else random.uniform(*CLICK_HOLD_RANGE))
     _post(up, mode, pid)

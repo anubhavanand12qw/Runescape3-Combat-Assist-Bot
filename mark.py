@@ -27,6 +27,8 @@ Modes (press the key):
   h   HEALTH probe — one click on red bar at your eat threshold
   d   ADRENALINE probe — one click on empty adren bar (0%)
   t   TARGET-BAR probe — one click on top target bar while engaged
+  l   LOOT-BUTTON probe — one click on loot UI while it is visible
+  i   LOOT-INVENTORY probe — one click on a blank inventory slot
 
 AREA mouse:
   left-click empty      add corner (or insert on nearest edge if insert ON)
@@ -41,12 +43,12 @@ ZOMBIE mouse:
   left-click            sample zombie colour (include)
   right-click           sample bone/floor colour (exclude from match)
 
-PROBE mouse (h / d / t):
+PROBE mouse (h / d / t / l / i):
   left-click            set / replace that probe (colour sampled now)
   right-click           clear that probe
 
 Other keys:
-  i   toggle INSERT-on-edge (area mode)
+  n   toggle INSERT-on-edge (area mode)
   u   undo last add (area corner / include / exclude / probe)
   c   clear current mode only
   x   clear room lock + zombie colours (probes are kept)
@@ -72,7 +74,7 @@ from src import aoi, capture, config_util, probes, targets, window
 
 CONFIG_PATH = Path("config.json")
 MAX_PREVIEW_W = 1280
-BANNER_H = 154
+BANNER_H = 186
 FREEZE_COUNTDOWN_S = 5
 MARKER_CATCH_TIMEOUT_S = 2.0
 NEAR_PT_PX = 14
@@ -84,7 +86,13 @@ PROBE_MODES = {
     "health": ("health", (60, 60, 255), "HP"),
     "adren": ("adrenaline", (40, 200, 255), "ADREN"),
     "tbar": ("target_bar", (0, 220, 255), "TBAR"),
+    "lootbtn": ("loot_button", (80, 220, 120), "LOOTBTN"),
+    "lootin": ("loot_inventory", (180, 140, 255), "LOOTINV"),
 }
+
+# Required for combat signals; loot probes are optional until loot mode is on.
+CORE_PROBE_NAMES = ("health", "adrenaline", "target_bar")
+ALL_PROBE_NAMES = CORE_PROBE_NAMES + ("loot_button", "loot_inventory")
 
 
 def _probe_from_dict(entry: object) -> dict | None:
@@ -114,7 +122,7 @@ def _load_saved_probes(cfg: dict) -> dict[str, dict]:
     pcfg = raw.get("probes") if isinstance(raw.get("probes"), dict) else None
     if not pcfg:
         pcfg = cfg.get("probes") if isinstance(cfg.get("probes"), dict) else {}
-    for name in ("health", "adrenaline", "target_bar"):
+    for name in ALL_PROBE_NAMES:
         entry = _probe_from_dict(pcfg.get(name))
         if entry is not None:
             out[name] = entry
@@ -140,9 +148,15 @@ def _show_countdown_tile(seconds_left: int, title: str = "Switch to RuneScape") 
 
 
 def freeze_game(grab: capture.Grabber, wait_s: int = FREEZE_COUNTDOWN_S,
-                catch_marker: bool = True
+                catch_marker: bool = True,
+                aoi_cfg: dict | None = None,
+                search_rect_frac: list[float] | None = None,
                 ) -> tuple[object, np.ndarray, tuple[int, int, float] | None]:
-    """Countdown → re-find window → grab until cyan marker is ON."""
+    """Countdown → re-find window → grab until cyan marker is ON.
+
+    Uses the same ``aoi`` marker settings / search box as the live preview so
+    freeze catch and ``V-marker=`` status stay consistent.
+    """
     print(f"Switch back to RuneScape — freezing in {wait_s} seconds…")
     for left in range(wait_s, 0, -1):
         print(f"  {left}…")
@@ -153,10 +167,15 @@ def freeze_game(grab: capture.Grabber, wait_s: int = FREEZE_COUNTDOWN_S,
     if win is None:
         raise RuntimeError("RuneScape is not open anymore.")
 
-    mcfg = aoi._marker_cfg({})
+    base = dict(aoi_cfg) if isinstance(aoi_cfg, dict) else {}
+    mcfg = aoi._marker_cfg(base)
+    if search_rect_frac is not None and len(search_rect_frac) == 4:
+        mcfg["search_rect"] = list(search_rect_frac)
     tmpl = None
     if aoi.MARKER_TEMPLATE_PATH.exists():
         tmpl = cv2.imread(str(aoi.MARKER_TEMPLATE_PATH), cv2.IMREAD_COLOR)
+    else:
+        print(f"WARNING: missing cyan V template at {aoi.MARKER_TEMPLATE_PATH}")
     freeze = grab.grab(win.region)
     mhit = aoi.detect_marker(freeze, mcfg, template=tmpl) if catch_marker else None
 
@@ -250,12 +269,12 @@ class Marker:
     """Click handler for fence corners, search box, probes, and colour samples."""
 
     def __init__(self) -> None:
-        self.mode = "area"  # area | zombie | search | health | adren | tbar
+        self.mode = "area"  # area | zombie | search | health | adren | tbar | lootbtn | lootin
         self.area_pts: list[tuple[int, int]] = []
         self.color_pts: list[tuple[int, int]] = []
         self.exclude_pts: list[tuple[int, int]] = []
         self.search_corners: list[tuple[int, int]] = []  # up to 2 clicks
-        # Probe entries keyed by config name: health / adrenaline / target_bar
+        # Probe entries keyed by config name (core + optional loot)
         self.probe_entries: dict[str, dict] = {}
         self.freeze: np.ndarray | None = None
         self.win_w = 1
@@ -267,6 +286,7 @@ class Marker:
         self.undo_stack: list[tuple] = []
         self.room_dirty = False
         self.zombie_dirty = False
+        self.status_msg: str = ""
 
     def search_rect_px(self) -> tuple[int, int, int, int] | None:
         if len(self.search_corners) < 2:
@@ -454,7 +474,7 @@ def main() -> int:
     cv2.namedWindow("RS3 mark", cv2.WINDOW_AUTOSIZE)
 
     try:
-        win, freeze, _mhit = freeze_game(grab)
+        win, freeze, _mhit = freeze_game(grab, aoi_cfg=cfg.get("aoi") or {})
     except RuntimeError as exc:
         print(exc)
         return 1
@@ -499,12 +519,16 @@ def main() -> int:
             pcfg = raw_p
     probe_tol = int(pcfg.get("tolerance", probes.DEFAULT_TOLERANCE))
     if saved_probes:
-        print(f"Loaded {len(saved_probes)}/3 UI probes from last save "
-              f"(h/d/t kept — only re-click to change).")
+        core_n = sum(1 for n in CORE_PROBE_NAMES if n in saved_probes)
+        loot_n = sum(1 for n in ("loot_button", "loot_inventory")
+                     if n in saved_probes)
+        print(f"Loaded {core_n}/3 core + {loot_n}/2 loot probes from last save "
+              f"(h/d/t/l/i kept — only re-click to change).")
         for name, entry in saved_probes.items():
             print(f"  {name}: frac={entry['xy_frac']}  BGR={entry['bgr']}")
     else:
-        print("No UI probes saved yet — set them once with h / d / t, then s.")
+        print("No UI probes saved yet — set them once with h / d / t "
+              "(and optionally l / i for loot), then s.")
 
     tcfg = cfg.setdefault("targeting", {})
     colors: list[list[int]] = list(tcfg.get("zombie_colors_bgr") or [])
@@ -523,9 +547,9 @@ def main() -> int:
     print("ROOM LOCK (when needed):")
     print("  1) Cyan V on room floor  2) v=search box  3) a=fence  4) z=colours")
     print("UI PROBES (optional to re-do — kept from last save):")
-    print("  h / d / t only if you want to CHANGE them; otherwise just s")
+    print("  h / d / t  (core)   l / i  (loot button / blank inventory)")
     print("=" * 64)
-    print("Keys: a/z/v  h/d/t probes  r refresh  s SAVE  q quit")
+    print("Keys: a/z/v  h/d/t/l/i probes  n=insert  r refresh  s SAVE  q quit")
     print("Note: x clears fence/colours only — probes are NOT cleared.")
 
     while True:
@@ -611,7 +635,7 @@ def main() -> int:
 
         if marker.mode == "area":
             ins = "INSERT-ON" if marker.insert_mode else "append"
-            mode_txt = f"AREA: L=add/move  R=delete  i={ins}"
+            mode_txt = f"AREA: L=add/move  R=delete  n={ins}"
             mode_col = (80, 220, 80)
         elif marker.mode == "search":
             mode_txt = "SEARCH: click 2 corners (keep minimap OUT)  R=clear"
@@ -622,6 +646,8 @@ def main() -> int:
                 "health": "click red fill at eat threshold (change→eat)",
                 "adren": "click empty adren bar (change→fighting)",
                 "tbar": "click target bar while engaged (match→attack)",
+                "lootbtn": "click loot button while visible (match→present)",
+                "lootin": "click blank inventory slot (change→loot present)",
             }
             mode_txt = f"{plabel} PROBE: L=set  R=clear  — {tips[marker.mode]}"
             mode_col = PROBE_MODES[marker.mode][1]
@@ -641,23 +667,29 @@ def main() -> int:
         has_hp = "health" in marker.probe_entries
         has_ad = "adrenaline" in marker.probe_entries
         has_tb = "target_bar" in marker.probe_entries
+        has_lb = "loot_button" in marker.probe_entries
+        has_li = "loot_inventory" in marker.probe_entries
         prior_aoi = len((cfg.get("aoi") or {}).get("polygon_offset") or []) >= 3
         room_ok = (has_box and has_fence and has_zom and has_v) or prior_aoi
         chk = (
             f"ROOM: [{'x' if room_ok else ' '}] locked   "
             f"PROBES: [{'x' if has_hp else ' '}]h  "
             f"[{'x' if has_ad else ' '}]d  "
-            f"[{'x' if has_tb else ' '}]t   then s"
+            f"[{'x' if has_tb else ' '}]t  "
+            f"[{'x' if has_lb else ' '}]l  "
+            f"[{'x' if has_li else ' '}]i   then s"
         )
         lines = [
-            "ROOM: v/a/z (+cyan V) when needed | PROBES: h=HP d=adren t=target | s=save",
+            "ROOM: v/a/z (+cyan V) | PROBES: h/d/t + l/i loot | s=save",
             f"MODE [{marker.mode.upper()}]  {mode_txt}",
             (f"corners={len(marker.area_pts)}  inc={len(marker.color_pts)}  "
              f"exc={len(marker.exclude_pts)}  tol={tolerance}  "
              f"probe_tol={probe_tol}  {stxt}  {mtxt}"),
             chk,
-            "keys: a/z/v  h/d/t  i insert  u undo  c clear  x clear-room  [ ] dz  +/- tol  ,/. probe-tol  r  s  q",
+            "keys: a/z/v  h/d/t/l/i  n insert  u undo  c clear  x clear-room  [ ] dz  +/- tol  ,/. probe-tol  r  s  q",
         ]
+        if marker.status_msg:
+            lines.append(marker.status_msg[:90])
         for i, line in enumerate(lines):
             if i == 0:
                 col = (0, 220, 255)
@@ -666,6 +698,8 @@ def main() -> int:
             elif i == 3:
                 ready = room_ok and has_hp and has_ad and has_tb
                 col = (80, 220, 80) if ready else (80, 80, 255)
+            elif i == 5:
+                col = (80, 80, 255)
             else:
                 col = (210, 210, 210)
             cv2.putText(banner, line, (8, 22 + i * 26),
@@ -705,7 +739,17 @@ def main() -> int:
             marker.drag_idx = None
             print("TARGET-BAR probe — engage a mob, then click the top bar pixel.")
             print("  Tip: press r to refresh freeze while the bar is visible.")
+        elif key == ord("l"):
+            marker.mode = "lootbtn"
+            marker.drag_idx = None
+            print("LOOT-BUTTON probe — open loot UI, then click the loot button.")
+            print("  Tip: match = button present. Press r if the freeze is stale.")
         elif key == ord("i"):
+            marker.mode = "lootin"
+            marker.drag_idx = None
+            print("LOOT-INVENTORY probe — click a BLANK inventory slot.")
+            print("  Tip: change = item appeared (loot present).")
+        elif key == ord("n"):
             marker.insert_mode = not marker.insert_mode
             print(f"Insert-on-edge: {'ON' if marker.insert_mode else 'OFF'}")
         elif key == ord("u"):
@@ -743,14 +787,19 @@ def main() -> int:
             marker.zombie_dirty = True
             colors = []
             excludes = []
-            # Keep health / adren / target-bar probes from last save.
+            # Keep UI probes from last save.
             print("Cleared fence, search box, and zombie colours.")
-            print("  (UI probes h/d/t kept — press c in h/d/t mode to clear one)")
+            print("  (UI probes h/d/t/l/i kept — press c in that mode to clear one)")
         elif key == ord("r"):
             while (cv2.waitKey(1) & 0xFF) not in (255, 0, -1):
                 pass
             try:
-                win, freeze, _mhit = freeze_game(grab)
+                live_box = marker.search_rect_frac(win.width, win.height)
+                win, freeze, _mhit = freeze_game(
+                    grab,
+                    aoi_cfg=cfg.get("aoi") or {},
+                    search_rect_frac=live_box,
+                )
             except RuntimeError as exc:
                 print(exc)
                 continue
@@ -758,7 +807,12 @@ def main() -> int:
             marker.win_w = win.width
             marker.win_h = win.height
             cv2.setMouseCallback("RS3 mark", marker.on_mouse)
-            print("Ready — fence/probes kept; image refreshed.")
+            if _mhit is not None:
+                print(f"Ready — cyan V locked @ ({_mhit[0]},{_mhit[1]}) "
+                      f"score={_mhit[2]:.2f}")
+            else:
+                print("Ready — fence/probes kept; cyan V not seen (try r again).")
+            print("  Image refreshed.")
         elif key == ord("[") or key == ord("{"):
             deadzone_frac = max(0.02, deadzone_frac - 0.005)
         elif key == ord("]") or key == ord("}"):
@@ -788,9 +842,11 @@ def main() -> int:
             updating_fence = marker.room_dirty
 
             if updating_fence and len(marker.area_pts) < 3:
+                marker.status_msg = "SAVE BLOCKED: need 3+ fence corners (press a)"
                 print("Need at least 3 area corners before saving a new fence.")
                 continue
             if not updating_fence and len(prior_offset) < 3:
+                marker.status_msg = "SAVE BLOCKED: no fence yet — press a, mark 3+ corners"
                 print("No saved fence yet — press a and mark 3+ corners first.")
                 continue
 
@@ -802,11 +858,13 @@ def main() -> int:
             uniq = dedupe_colors(new_colors, min_delta=6)
             if marker.zombie_dirty:
                 if not uniq:
+                    marker.status_msg = "SAVE BLOCKED: press z, LEFT-click a zombie"
                     print("No zombie colours yet. Press z and LEFT-click a zombie.")
                     continue
             elif not uniq:
                 uniq = list(prior_colors)
             if not uniq:
+                marker.status_msg = "SAVE BLOCKED: press z, LEFT-click a zombie pixel"
                 print("No zombie colours yet. Press z and LEFT-click a zombie pixel.")
                 continue
             new_exc: list[list[int]] = []
@@ -825,25 +883,30 @@ def main() -> int:
             # re-click when only the fence / zombie colours changed.
             prior_probes = _load_saved_probes(cfg)
             resolved: dict[str, dict] = {}
-            for name in ("health", "adrenaline", "target_bar"):
+            for name in ALL_PROBE_NAMES:
                 if name in marker.probe_entries:
                     resolved[name] = marker.probe_entries[name]
                 elif name in prior_probes:
                     resolved[name] = prior_probes[name]
-            missing = [n for n in ("health", "adrenaline", "target_bar")
-                       if n not in resolved]
+            missing = [n for n in CORE_PROBE_NAMES if n not in resolved]
             if missing:
                 labels = {"health": "h", "adrenaline": "d", "target_bar": "t"}
                 need = ", ".join(f"{labels[n]}={n}" for n in missing)
+                marker.status_msg = f"SAVE BLOCKED: set probes {need}"
                 print(f"Missing probes (first-time only): {need}")
                 print("  Set them once, then future AOI saves keep them automatically.")
                 continue
+            if "loot_button" not in resolved or "loot_inventory" not in resolved:
+                print("  (loot probes l/i optional — set them before enabling loot mode)")
 
             # Room lock: re-resolve cyan marker when fence is being rewritten.
             mx = my = None
             mscore = 0.0
             if updating_fence:
-                mcfg = aoi._marker_cfg({})
+                mcfg = aoi._marker_cfg(cfg.get("aoi") or {})
+                live_box = marker.search_rect_frac(win.width, win.height)
+                if live_box is not None:
+                    mcfg["search_rect"] = live_box
                 tmpl = None
                 if aoi.MARKER_TEMPLATE_PATH.exists():
                     tmpl = cv2.imread(str(aoi.MARKER_TEMPLATE_PATH),
@@ -855,10 +918,14 @@ def main() -> int:
                         grab.grab, win.region, mcfg,
                         timeout_s=MARKER_CATCH_TIMEOUT_S, template=tmpl)
                 if mhit is None:
-                    print("No cyan marker found. Press r, then s again.")
+                    marker.status_msg = (
+                        "SAVE BLOCKED: V-marker OFF — place cyan V, press r, then s")
+                    print("No cyan marker found. Press r when the cyan V blinks ON, then s.")
                     continue
                 mx, my, mscore = mhit
                 if aoi._in_ui_zone(mx, my, win.width, win.height):
+                    marker.status_msg = (
+                        "SAVE BLOCKED: V locked on UI — put cyan V on floor, r, s")
                     print("Marker landed on UI/minimap — that glues the fence to YOU.")
                     print("Keep the cyan V on the open floor, press r, then s.")
                     continue
@@ -868,9 +935,11 @@ def main() -> int:
                 if search_frac is None:
                     search_frac = prior_aoi.get("search_rect")
                 if search_frac is None:
+                    marker.status_msg = "SAVE BLOCKED: press v, click 2 search-box corners"
                     print("BLOCKED: search box is mandatory. Press v, click 2 corners.")
                     continue
                 if not aoi.MARKER_TEMPLATE_PATH.exists():
+                    marker.status_msg = "SAVE BLOCKED: missing cyan_marker_crop.png"
                     print("BLOCKED: missing reference/markers/cyan_marker_crop.png")
                     continue
 
@@ -894,7 +963,9 @@ def main() -> int:
                     "arm_window_s": 2.5,
                     "lost_after_s": 1.2,
                     "template_path": str(aoi.MARKER_TEMPLATE_PATH),
-                    "template_threshold": 0.62,
+                    "template_threshold": float(
+                        mcfg.get("template_threshold",
+                                 aoi.DEFAULT_TEMPLATE_THRESHOLD)),
                 }
                 for dead in ("patches", "scene", "scene_threshold",
                              "match_threshold", "min_patch_hits", "inlier_px",
@@ -912,12 +983,13 @@ def main() -> int:
 
             cfg.setdefault("targeting", {})
             cfg["targeting"]["enabled"] = True
-            cfg["targeting"]["click_nearest"] = False
+            cfg["targeting"].setdefault("click_nearest", True)
             cfg["targeting"].setdefault("min_blob_area", 180)
             cfg["targeting"].setdefault("max_blob_area", 25000)
             cfg["targeting"].setdefault("relative_area_frac", 0.35)
             cfg["targeting"].setdefault("target_bar_arm_s", 3.0)
-            cfg["targeting"].setdefault("retarget_cooldown_s", 3.0)
+            cfg["targeting"].setdefault("retarget_cooldown_s", [4.5, 6.0])
+            cfg["targeting"].setdefault("static_still_s", 2.0)
             cfg["targeting"].pop("click_cooldown_s", None)
             cfg["targeting"]["zombie_colors_bgr"] = uniq
             cfg["targeting"]["zombie_exclude_bgr"] = uniq_exc
@@ -926,14 +998,17 @@ def main() -> int:
 
             cfg["probes"] = {
                 "_comment": (
-                    "Single-pixel watchers from mark.py (h/d/t). "
+                    "Single-pixel watchers from mark.py (h/d/t/l/i). "
                     "health change→eat, adren change→fight, "
-                    "target_bar match→under attack."
+                    "target_bar match→under attack, "
+                    "loot_button match + loot_inventory change→loot."
                 ),
                 "tolerance": probe_tol,
                 "health": resolved["health"],
                 "adrenaline": resolved["adrenaline"],
                 "target_bar": resolved["target_bar"],
+                "loot_button": resolved.get("loot_button"),
+                "loot_inventory": resolved.get("loot_inventory"),
             }
             # Keep session in sync so the banner stays green after save logic.
             marker.probe_entries = dict(resolved)
@@ -947,11 +1022,16 @@ def main() -> int:
                 print(f"  lock: cyan marker @ ({mx},{my})")
             print(f"  zombie include: {len(uniq)}  exclude: {len(uniq_exc)}  "
                   f"tol={tolerance}/{exclude_tol}")
+            loot_btn = resolved.get("loot_button")
+            loot_inv = resolved.get("loot_inventory")
             print(f"  probes (kept/updated): "
                   f"health={resolved['health']['xy_frac']}  "
                   f"adren={resolved['adrenaline']['xy_frac']}  "
                   f"tbar={resolved['target_bar']['xy_frac']}  "
                   f"tol={probe_tol}")
+            print(f"  loot probes: "
+                  f"button={loot_btn['xy_frac'] if loot_btn else None}  "
+                  f"inventory={loot_inv['xy_frac'] if loot_inv else None}")
             print(f"  deadzone_frac: {deadzone_frac:.3f}")
             print("\nNext:  python3 run.py --dry-run")
             return 0

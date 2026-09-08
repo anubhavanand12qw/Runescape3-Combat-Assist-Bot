@@ -14,9 +14,13 @@ macOS assistant for **RuneScape 3** that watches your screen — not the game AP
 |---|---|
 | **Cyan-V world lock** | Your fight fence sticks to a **cyan V on the floor**, so it stays on the *room* when you walk — not glued to your character or the minimap |
 | **Area of Interest** | You paint the kill zone once (`mark.py`). The bot only hunts enemies **inside that green fence** |
+| **Free method** | Optional: click visible zombie colours with **no cyan marker / fence** — target-bar gated, optional stillness |
 | **Pixel probes** | One click each for health / adrenaline / target bar — no fragile “draw a box on the HP bar” calibration loop |
-| **Smart retarget** | Waits for the top target bar to clear, cools down, then picks the densest enemy blob |
-| **Human mode** | Curved mouse paths + occasional wander while waiting — clicks still land on the **exact** pixel |
+| **Smart retarget** | Waits for the top target bar, cools down (random watch), skips click if bar returns on its own |
+| **Loot + bury** | Space and `]` with human timing — `off` / after combat / always (independent intervals) |
+| **Eat SAFE STOP** | Two failed eats → pause loot, bury, and combat until HP stays OK |
+| **Kills / hour** | Counts target-bar clears this session; shown on the overlay |
+| **Human mode** | Curved mouse paths + wander while waiting — clicks still land on the **exact** pixel |
 
 ---
 
@@ -35,9 +39,9 @@ macOS assistant for **RuneScape 3** that watches your screen — not the game AP
   └──────────────────────────────────────────────────────────────────┘
 ```
 
-1. Place a **cyan V** ground marker on the room floor  
+1. Place a **cyan V** ground marker on the room floor *(not required for Method → free)*  
 2. `mark.py` → draw **search box** → **fence** → **zombie colours** → **HP / adren / target probes** → save  
-3. `run.py` → it locks, eats, clicks, wanders like a person (if you want)
+3. `run.py` → lock, eat, click, loot/bury, wander like a person (if you want)
 
 ---
 
@@ -83,7 +87,9 @@ python3 mark.py
 | **`z`** | Zombie colours — left-click body, right-click bones/floor to exclude |
 | **`h`** | Health probe — click red bar at the % where you want to eat |
 | **`d`** | Adrenaline probe — click the **empty** adren bar (0%) |
-| **`t`** | Target-bar probe — engage a mob, click a pixel on the top target bar |
+| **`t`** | Target-bar probe — engage a mob, click a **distinctive** pixel on the top target bar (keep `probes.tolerance` tight, e.g. ~10) |
+| **`l`** | Loot-button probe — open loot UI, click the loot button (optional; for **always** + Inv box on) |
+| **`i`** | Blank-inventory probe — click an empty inv slot (optional) |
 | **`s`** | Save (probes persist — next time you only re-mark what changed) |
 | **`r`** | Refresh freeze if the V blinked off |
 
@@ -98,9 +104,16 @@ python3 run.py              # for real
 
 | Control | Action |
 |---------|--------|
-| Overlay **Attack** | `bot` = snappy · `human` = curved mouse + wander while waiting |
-| Overlay **Eat** | `low HP` always · `in combat` only while fighting / target bar |
-| `b` / `e` | Toggle attack / eat mode |
+| Overlay **Attack** | `bot` · `human` (curved mouse + wander) · `off` (eat/loot/bury still run) |
+| Overlay **Method** | `pixel` · `static` (fence + still) · `free` (visible colours, no marker; optional still) |
+| Overlay **Eat** | `low HP` · `in combat` |
+| Overlay **Loot** | `off` · `target` (Space when bar clears) · `always` (random gap, default 2–5s) |
+| Overlay **Bury** | `off` · `target` · `always` — key `]` (human timing) |
+| Overlay **Inv box** | `off` = Space only · `on` = always also uses loot probes (`l`/`i`) |
+| Overlay **Free still** | `off` by default — skip 2s stillness in free mode (pre-click pixel verify still runs) |
+| Overlay **+/−** | Bar wait, hard hold, still time, bar arm, loot gap, bury gap — persisted to `config.json` |
+| Overlay **kills / hr** | Target-bar clear count this session |
+| `b` / `m` / `e` / `o` / `i` / `u` / `s` | Cycle attack / method / eat / loot / inv / bury / free still |
 | `F12` | Pause / resume |
 | Esc ×3 | Stop |
 | `q` | Stop (overlay focused) |
@@ -109,12 +122,12 @@ python3 run.py              # for real
 
 ## Area of Interest — how it actually works
 
-This is the feature people remember.
-
 1. **`v` search box** — “Where am I allowed to *look* for the cyan V?” (UI stays out.)  
 2. **`a` fence** — “Where am I allowed to *click* enemies?” Stored as **offsets from the V**, not fixed screen pixels.  
 3. At runtime the bot finds the V every frame (template + cyan mask **inside** your search box) and **rebuilds the green fence** around it.  
 4. Walk around the room → fence follows the floor marker. Leave the marker → fence lost → no random clicks on chat/minimap.
+
+**Method → free** skips the marker/fence and clicks colour blobs in the visible playfield, still gated by the target-bar probe.
 
 Re-run `mark.py` after big zoom / camera changes.
 
@@ -124,11 +137,26 @@ Re-run `mark.py` after big zoom / camera changes.
 
 | Probe | You click… | Bot treats… |
 |-------|------------|-------------|
-| **Health (`h`)** | Red fill at your eat threshold | Colour **changes** → press food (`0`) |
+| **Health (`h`)** | Red fill at your eat threshold | Colour **changes** → press food (default `[`) with **human** key timing |
 | **Adrenaline (`d`)** | Empty adren track | Colour **changes** → fighting |
-| **Target bar (`t`)** | Top target-info bar while engaged | Colour **matches** → under attack / hold fire |
+| **Target bar (`t`)** | Top target-info bar while engaged | Colour **matches** → under attack / hold fire / kill count |
+| **Loot button (`l`)** | Loot UI button while visible | Colour **matches** → loot present (`always` + Inv on) |
+| **Loot inv (`i`)** | Blank inventory slot | Colour **changes** → loot present (`always` + Inv on) |
 
 Saved in `config.json` under `probes`. Next `mark.py` run **reloads** them — only re-click what you want to change.
+
+Food, loot, and bury **always** use `human.*` key delays (even when Attack is `bot` or `off`).
+
+---
+
+## Combat assist behaviour (summary)
+
+- **Retarget:** after a click, wait for the bar; after bar clear, random **bar wait** watch — if the bar returns alone, don’t click elsewhere. Free mode has a **hard hold** cap then force a different target.
+- **Pre-click verify:** abort click if zombie colour is gone under the cursor.
+- **Nearest:** prefer blob nearest screen/AOI centre when `click_nearest` is true.
+- **Eat SAFE STOP:** after `eat_max_failures` (default 2) failed eats → pause loot, bury, and combat until HP stays OK for `eat_resume_hold_s`.
+- **Support-key mute:** Space / bury do not fire during eat SAFE STOP, human micro-breaks, or post-click / cooldown waits.
+- **Kills/hr:** each target-bar ON→OFF increments the session counter (overlay + stop summary).
 
 ---
 
@@ -137,8 +165,10 @@ Saved in `config.json` under `probes`. Next `mark.py` run **reloads** them — o
 When **Attack → human** is on:
 
 - **Clicks** use a visible curved path, then button events fire on the **exact** target pixel  
-- **While waiting** on target bar / cooldown, the mouse **wanders every few seconds** inside the AOI — not a twitch every tick  
+- **While waiting** on target bar / cooldown, the mouse **wanders every few seconds** — not a twitch every tick  
 - **RuneScape must stay frontmost** or everything pauses (including wander)
+
+When **Attack → off**: no targeting clicks and no ability keys; eat, loot, and bury still work.
 
 ---
 
@@ -151,37 +181,48 @@ keytest.py          prove Accessibility works
 calibrate.py        optional legacy bar boxes
 Guide.md            full first-machine walkthrough
 config.default.json all tunables (catalogue)
-config.json         your live mark (created on save — not in git)
+config.json         your live mark (created/updated on save)
 
 src/
   aoi.py            cyan-V lock + fence rebuild
-  probes.py         single-pixel health / adren / target
-  targets.py        colour blobs inside the fence
-  human.py          curved mouse + wait wander
+  free_pixel.py     free-method colour targeting
+  static_target.py  stillness filter for static/free
+  probes.py         single-pixel health / adren / target / loot
+  targets.py        colour blobs + pre-click colour check
+  loot.py           Space loot decisions
+  bury.py           bury-key decisions
+  human.py          curved mouse + wait wander + short breaks
   bot.py            decisions + loop
+  overlay.py        status panel + clickable controls
   capture.py        CG window grab (works across Spaces)
 
-reference/markers/cyan_marker_crop.png   required V template
+reference/markers/cyan_marker_crop.png   required V template (pixel/static)
 ```
 
 ---
 
 ## Config knobs worth knowing
 
-Edit `config.json` after first save (or copy from `config.default.json`).
+Edit `config.json` after first save (or copy from `config.default.json`). Overlay **+/−** and toggles persist live via `config_util.patch_live`.
 
 | Key | Meaning |
 |-----|---------|
-| `probes.*` | Health / adren / target-bar pixels + tolerance |
-| `targeting.target_bar_arm_s` | Seconds to wait for bar after a click (default **3**) |
-| `targeting.retarget_cooldown_s` | Seconds after a kill before next click (default **3**) |
-| `targeting.zombie_colors_bgr` | Include colours from `mark.py` |
-| `aoi.search_rect` | Your `v` box (also clips the AOI crop away from HUD) |
-| `aoi.polygon_offset` | Fence corners relative to the cyan V |
-| `human.wait_wander_interval_s` | How often to wander while waiting (`[2.5, 6.0]`) |
-| `behavior.attack_style` | `bot` \| `human` |
+| `probes.*` | Health / adren / target-bar pixels + **`tolerance`** (try ~10 if bar sticks) |
+| `food_key` | Default `"["` |
+| `bury.bury_key` | Default `"]"` |
+| `targeting.target_bar_arm_s` | Seconds to wait for bar after a click |
+| `targeting.retarget_cooldown_s` | `[lo, hi]` watch after bar clears (e.g. `[4.5, 6]`) |
+| `targeting.free_max_bar_hold_s` | Free-mode hard hold before force retarget |
+| `targeting.static_still_s` | Stillness seconds (static method; free if Free still on) |
+| `targeting.click_nearest` | Prefer nearest-to-centre blob |
+| `behavior.attack_style` | `bot` \| `human` \| `off` |
+| `behavior.attack_method` | `pixel` \| `static` \| `free` |
+| `behavior.free_require_still` | `false` = free skips 2s still wait (default) |
+| `behavior.loot_mode` / `bury_mode` | `off` \| `after_combat` \| `always` |
+| `behavior.loot_use_inv` | `false` = Space only · `true` = probe-gated always |
+| `loot.always_interval_s` / `bury.always_interval_s` | Random gaps for always mode |
+| `eat_max_failures` / `eat_resume_hold_s` | SAFE STOP after failed eats |
 | `ability_keys` | e.g. `["1","2"]` — **empty = press nothing** |
-| `food_key` | Default `"0"` |
 
 Full catalogue: **`config.default.json`**. Deep-merged under your live `config.json`.
 
@@ -213,8 +254,10 @@ python3 run.py --skip-autocal  # skip legacy bar auto-measure
 | “RuneScape is not open” | Client running; Screen Recording enabled; restart terminal app |
 | Keys/clicks do nothing | Accessibility ON + full restart of that app; try `keytest.py` |
 | `PAUSED - game not in front` | Click into the **RuneScape** window (overlays pause input on purpose) |
-| MARKER LOST | Cyan V on floor, blinking/visible; re-run `mark.py` with `v` box tight |
-| Action bar in AOI window | Tighten `v` search box above the HUD; AOI crop is clipped to it |
+| MARKER LOST | Cyan V on floor, blinking/visible; re-run `mark.py` with `v` box tight (or use Method → free) |
+| Action bar in AOI window | Tighten `v` search box above the HUD |
+| Hard-limit / sticky TARGET | Remake `t` on a unique bar pixel; lower `probes.tolerance` |
+| SAFE STOP | Out of food / HP probe not recovering — restock or remake `h` |
 | Human mouse never moves | Same pause rule — RS must be frontmost |
 | Save blocked in `mark.py` | Need fence + colours + probes (probes auto-kept from last save) |
 

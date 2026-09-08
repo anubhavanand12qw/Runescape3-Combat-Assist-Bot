@@ -22,16 +22,21 @@ from .window import GameWindow
 
 DEFAULT_DEADZONE_FRAC = 0.055
 
-# Sampled from your marker screenshots (HSV OpenCV scale).
-DEFAULT_HSV_LOW = [88, 40, 100]
-DEFAULT_HSV_HIGH = [125, 255, 255]
+# Sampled from live V crops. Hue stays tight (this cyan only); sat/value are
+# moderate so dim anti-aliased edges still count. Multi-point voting rejects
+# other blue/cyan UI that is not V-shaped.
+DEFAULT_HSV_LOW = [91, 110, 95]
+DEFAULT_HSV_HIGH = [104, 255, 255]
 DEFAULT_MIN_AREA = 25
 DEFAULT_MAX_AREA = 5000
 DEFAULT_BLINK_PERIOD_S = 0.5
 DEFAULT_HOLDOVER_S = 0.60
 DEFAULT_ARM_WINDOW_S = 2.5
 DEFAULT_LOST_AFTER_S = 1.2
-DEFAULT_TEMPLATE_THRESHOLD = 0.62
+DEFAULT_TEMPLATE_THRESHOLD = 0.42
+# Multi-point confirm: fraction of V sample points that must match cyan.
+DEFAULT_MULTIPOINT_MIN_FRAC = 0.45
+DEFAULT_MULTIPOINT_COUNT = 28
 MARKER_TEMPLATE_PATH = Path("reference/markers/cyan_marker_crop.png")
 
 
@@ -102,6 +107,8 @@ def _marker_cfg(aoi_cfg: dict) -> dict:
     m.setdefault("lost_after_s", DEFAULT_LOST_AFTER_S)
     m.setdefault("template_threshold", DEFAULT_TEMPLATE_THRESHOLD)
     m.setdefault("template_scales", [0.5, 0.65, 0.8, 1.0, 1.2, 1.4])
+    m.setdefault("multipoint_min_frac", DEFAULT_MULTIPOINT_MIN_FRAC)
+    m.setdefault("multipoint_count", DEFAULT_MULTIPOINT_COUNT)
     m.setdefault("default_search_frac",
                  list(aoi_cfg.get("default_search_frac")
                       or [0.05, 0.08, 0.68, 0.78]))
@@ -111,6 +118,85 @@ def _marker_cfg(aoi_cfg: dict) -> dict:
     elif "search_rect" not in m:
         m["search_rect"] = None
     return m
+
+
+def _hsv_relaxed(hsv_low: list[int], hsv_high: list[int],
+                 sat_pad: int = 25, val_pad: int = 30
+                 ) -> tuple[list[int], list[int]]:
+    """Slightly expand sat/value for multi-point edge samples (hue stays tight)."""
+    low = [
+        int(hsv_low[0]),
+        max(0, int(hsv_low[1]) - sat_pad),
+        max(0, int(hsv_low[2]) - val_pad),
+    ]
+    high = [
+        int(hsv_high[0]),
+        min(255, int(hsv_high[1]) + 5),
+        255,
+    ]
+    return low, high
+
+
+def marker_sample_offsets(template: np.ndarray, hsv_low: list[int],
+                          hsv_high: list[int],
+                          count: int = DEFAULT_MULTIPOINT_COUNT
+                          ) -> list[tuple[int, int]]:
+    """Relative (dx, dy) sample points across the cyan V silhouette.
+
+    Points are taken from the template cyan mask (spread over the V), so
+    detection votes on many locations instead of a single pixel.
+    """
+    if template is None or template.size == 0:
+        return []
+    hsv = cv2.cvtColor(template, cv2.COLOR_BGR2HSV)
+    mask = cv2.inRange(hsv, np.array(hsv_low, dtype=np.uint8),
+                       np.array(hsv_high, dtype=np.uint8))
+    # If strict mask is empty on the crop, fall back to any bright cyan-ish.
+    if int(mask.sum()) < 40:
+        rlow, rhigh = _hsv_relaxed(hsv_low, hsv_high, sat_pad=40, val_pad=50)
+        mask = cv2.inRange(hsv, np.array(rlow, dtype=np.uint8),
+                           np.array(rhigh, dtype=np.uint8))
+    ys, xs = np.where(mask > 0)
+    if len(xs) == 0:
+        return []
+    cy, cx = float(template.shape[0]) / 2.0, float(template.shape[1]) / 2.0
+    # Spread samples: take every Nth point sorted by angle around centre so we
+    # cover both arms of the V, not just a dense cluster.
+    pts = np.column_stack([xs, ys])
+    angles = np.arctan2(pts[:, 1] - cy, pts[:, 0] - cx)
+    order = np.argsort(angles)
+    step = max(1, len(order) // max(1, count))
+    picked = order[::step][:count]
+    return [(int(pts[i, 0] - cx), int(pts[i, 1] - cy)) for i in picked]
+
+
+def multipoint_cyan_score(frame_bgr: np.ndarray, cx: int, cy: int,
+                          offsets: list[tuple[int, int]],
+                          hsv_low: list[int], hsv_high: list[int],
+                          scale: float = 1.0
+                          ) -> float:
+    """Fraction of V sample points whose pixels match the (relaxed) cyan range."""
+    if not offsets:
+        return 0.0
+    h, w = frame_bgr.shape[:2]
+    rlow, rhigh = _hsv_relaxed(hsv_low, hsv_high)
+    low = np.array(rlow, dtype=np.int16)
+    high = np.array(rhigh, dtype=np.int16)
+    hits = 0
+    checked = 0
+    for dx, dy in offsets:
+        x = int(round(cx + dx * scale))
+        y = int(round(cy + dy * scale))
+        if not (0 <= x < w and 0 <= y < h):
+            continue
+        checked += 1
+        bgr = frame_bgr[y, x]
+        hsv = cv2.cvtColor(np.uint8([[bgr]]), cv2.COLOR_BGR2HSV)[0, 0].astype(np.int16)
+        if np.all(hsv >= low) and np.all(hsv <= high):
+            hits += 1
+    if checked == 0:
+        return 0.0
+    return hits / float(checked)
 
 
 def resolve_search_rect(mcfg: dict, fw: int, fh: int
@@ -224,64 +310,86 @@ def match_marker_template(frame_bgr: np.ndarray, template: np.ndarray,
                           hsv_low: list[int] | None = None,
                           hsv_high: list[int] | None = None,
                           scales: list[float] | None = None
-                          ) -> tuple[int, int, float] | None:
-    """Find the cyan V template — shape+colour, not random cyan UI text.
+                          ) -> tuple[int, int, float, float] | None:
+    """Find the cyan V — template shape on cyan mask + multi-point colour vote.
 
-    Matches on the cyan binary mask so chat/minimap text cannot win.
-    Tries a few scales because zoom changes the V size slightly.
+    Returns ``(cx, cy, template_score, multipoint_frac)`` or None.
     """
     if template is None or template.size == 0:
         return None
-    hsv_low = hsv_low or DEFAULT_HSV_LOW
-    hsv_high = hsv_high or DEFAULT_HSV_HIGH
+    hsv_low = list(hsv_low or DEFAULT_HSV_LOW)
+    hsv_high = list(hsv_high or DEFAULT_HSV_HIGH)
     scale_list = list(scales) if scales else [0.50, 0.65, 0.80, 1.0, 1.20, 1.40]
     fh, fw = frame_bgr.shape[:2]
     if search_xyxy is not None:
         x0, y0, x1, y1 = search_xyxy
     else:
-        # Fallback playfield — prefer values from marker cfg when wired through.
         x0, y0 = int(fw * 0.05), int(fh * 0.08)
         x1, y1 = int(fw * 0.68), int(fh * 0.78)
     if x1 - x0 < 16 or y1 - y0 < 16:
         return None
 
     roi_bgr = frame_bgr[y0:y1, x0:x1]
+    # Mask uses the configured range; multi-point uses a relaxed sat/val band.
     hsv = cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2HSV)
-    roi_mask = cv2.inRange(hsv, np.array(hsv_low, dtype=np.uint8),
-                           np.array(hsv_high, dtype=np.uint8))
+    rlow, rhigh = _hsv_relaxed(hsv_low, hsv_high)
+    roi_mask = cv2.inRange(hsv, np.array(rlow, dtype=np.uint8),
+                           np.array(rhigh, dtype=np.uint8))
     kernel = np.ones((3, 3), np.uint8)
     roi_mask = cv2.morphologyEx(roi_mask, cv2.MORPH_OPEN, kernel, iterations=1)
 
     tmpl_hsv = cv2.cvtColor(template, cv2.COLOR_BGR2HSV)
-    tmpl_mask = cv2.inRange(tmpl_hsv, np.array(hsv_low, dtype=np.uint8),
-                            np.array(hsv_high, dtype=np.uint8))
-    # Require a real cyan V silhouette — never gray-match (that hits UI text).
+    tmpl_mask = cv2.inRange(tmpl_hsv, np.array(rlow, dtype=np.uint8),
+                            np.array(rhigh, dtype=np.uint8))
     if int(tmpl_mask.sum()) < 30:
         return None
-    tmpl_gray = tmpl_mask
-    hay = roi_mask
 
-    best: tuple[int, int, float] | None = None
+    offsets = marker_sample_offsets(template, hsv_low, hsv_high)
+    hay = roi_mask
+    soft_thr = max(0.28, float(threshold) - 0.12)
+
+    best: tuple[int, int, float, float, float] | None = None  # cx,cy,tmpl,mp,scale
     for scale in scale_list:
         tw = max(8, int(round(template.shape[1] * scale)))
         th = max(8, int(round(template.shape[0] * scale)))
         if hay.shape[0] < th or hay.shape[1] < tw:
             continue
-        needle = cv2.resize(tmpl_gray, (tw, th), interpolation=cv2.INTER_AREA)
+        needle = cv2.resize(tmpl_mask, (tw, th), interpolation=cv2.INTER_AREA)
         result = cv2.matchTemplate(hay, needle, cv2.TM_CCOEFF_NORMED)
-        _, max_val, _, max_loc = cv2.minMaxLoc(result)
-        score = float(max_val)
-        if best is None or score > best[2]:
-            cx = x0 + max_loc[0] + tw // 2
-            cy = y0 + max_loc[1] + th // 2
-            best = (cx, cy, score)
+        # Consider several peaks so a mediocre global max doesn't win over a
+        # multi-point-confirmed weaker peak.
+        flat = result.reshape(-1)
+        if flat.size == 0:
+            continue
+        k = min(5, flat.size)
+        idxs = np.argpartition(flat, -k)[-k:]
+        for idx in idxs:
+            score = float(flat[idx])
+            if score < soft_thr:
+                continue
+            iy, ix = divmod(int(idx), result.shape[1])
+            cx = x0 + ix + tw // 2
+            cy = y0 + iy + th // 2
+            mp = multipoint_cyan_score(
+                frame_bgr, cx, cy, offsets, hsv_low, hsv_high, scale=scale)
+            rank = score * 0.55 + mp * 0.45
+            if best is None or rank > (best[2] * 0.55 + best[3] * 0.45):
+                best = (cx, cy, score, mp, scale)
 
-    if best is None or best[2] < threshold:
+    if best is None:
         return None
-    cx, cy, score = best
+    cx, cy, score, mp, _scale = best
+    min_frac = DEFAULT_MULTIPOINT_MIN_FRAC
+    # Always require a real multi-point cyan vote so target-bar / other cyan
+    # icons cannot win on template score alone.
+    ok = score >= soft_thr and mp >= min_frac
+    if score >= threshold and mp >= min_frac * 0.85:
+        ok = True
+    if not ok:
+        return None
     if search_xyxy is None and _in_ui_zone(cx, cy, fw, fh):
         return None
-    return cx, cy, score
+    return cx, cy, score, mp
 
 
 def detect_marker(frame_bgr: np.ndarray, mcfg: dict,
@@ -291,8 +399,8 @@ def detect_marker(frame_bgr: np.ndarray, mcfg: dict,
                   ) -> tuple[int, int, float] | None:
     """Locate the cyan V ground marker only (never generic cyan text/UI).
 
-    When the V template is available, blob colour-matching is disabled — that
-    path was locking onto minimap/chat cyan and made the fence follow the player.
+    Uses template match on a cyan mask plus multi-point colour voting across
+    the V silhouette so dim edges still count without locking onto other blues.
     """
     fh, fw = frame_bgr.shape[:2]
     search = resolve_search_rect(mcfg, fw, fh)
@@ -301,6 +409,7 @@ def detect_marker(frame_bgr: np.ndarray, mcfg: dict,
         tmp["search_rect"] = mcfg["default_search_frac"]
         search = resolve_search_rect(tmp, fw, fh)
     tmpl_thr = float(mcfg.get("template_threshold", DEFAULT_TEMPLATE_THRESHOLD))
+    min_frac = float(mcfg.get("multipoint_min_frac", DEFAULT_MULTIPOINT_MIN_FRAC))
 
     if template is None and MARKER_TEMPLATE_PATH.exists():
         template = cv2.imread(str(MARKER_TEMPLATE_PATH), cv2.IMREAD_COLOR)
@@ -310,15 +419,45 @@ def detect_marker(frame_bgr: np.ndarray, mcfg: dict,
             frame_bgr, template, tmpl_thr, search,
             hsv_low=mcfg.get("hsv_low"), hsv_high=mcfg.get("hsv_high"),
             scales=mcfg.get("template_scales"))
-        if hit is not None and near is not None:
-            # Soft gate: if we have a prior lock, prefer hits near it unless score is excellent.
-            nx, ny = near
-            if (hit[0] - nx) ** 2 + (hit[1] - ny) ** 2 > near_px ** 2 and hit[2] < 0.85:
-                # Re-search is still the same global best; accept it (camera jump).
-                pass
-        return hit
+        if hit is not None:
+            cx, cy, score, mp = hit
+            # Re-check multipoint frac against configured minimum.
+            if mp < min_frac * 0.65 and score < tmpl_thr:
+                return None
+            if near is not None:
+                nx, ny = near
+                if ((cx - nx) ** 2 + (cy - ny) ** 2 > near_px ** 2
+                        and score < 0.85):
+                    pass
+            return cx, cy, score
 
-    # Never fall back to generic cyan blobs — those lock onto minimap/chat text.
+        # Fallback: cyan blob centres inside search, confirmed by multi-point.
+        hsv_low = list(mcfg.get("hsv_low") or DEFAULT_HSV_LOW)
+        hsv_high = list(mcfg.get("hsv_high") or DEFAULT_HSV_HIGH)
+        rlow, rhigh = _hsv_relaxed(hsv_low, hsv_high)
+        mask = cyan_mask(frame_bgr, rlow, rhigh, search)
+        offsets = marker_sample_offsets(template, hsv_low, hsv_high)
+        n, _labels, stats, cents = cv2.connectedComponentsWithStats(mask, 8)
+        best_blob: tuple[int, int, float] | None = None
+        for i in range(1, n):
+            area = int(stats[i, cv2.CC_STAT_AREA])
+            if area < int(mcfg.get("min_area", DEFAULT_MIN_AREA)):
+                continue
+            if area > int(mcfg.get("max_area", DEFAULT_MAX_AREA)):
+                continue
+            bx = int(round(cents[i][0]))
+            by = int(round(cents[i][1]))
+            if search is None and _in_ui_zone(bx, by, fw, fh):
+                continue
+            mp = multipoint_cyan_score(
+                frame_bgr, bx, by, offsets, hsv_low, hsv_high, scale=1.0)
+            if mp < min_frac:
+                continue
+            if best_blob is None or mp > best_blob[2]:
+                best_blob = (bx, by, mp)
+        if best_blob is not None:
+            return best_blob[0], best_blob[1], float(best_blob[2])
+
     return None
 
 

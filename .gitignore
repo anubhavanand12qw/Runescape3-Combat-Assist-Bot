@@ -9,3 +9,11 @@ __pycache__/
 .env
 .env.*
 *.pem
+
+# Local session noise
+logs/
+*.jsonl
+
+# Local marker scratch
+reference/markers/*.prev.png
+reference/markers/*_from_user.png

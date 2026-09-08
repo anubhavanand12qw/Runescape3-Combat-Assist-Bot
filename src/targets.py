@@ -139,3 +139,33 @@ def largest(targets: list[Target]) -> Target | None:
     if not targets:
         return None
     return max(targets, key=lambda t: t.area)
+
+
+def zombie_colour_under(
+    frame_bgr: np.ndarray,
+    x: int,
+    y: int,
+    cfg: dict | None = None,
+    *,
+    radius_px: int = 2,
+) -> bool:
+    """True if a zombie colour is still under/near ``(x, y)`` in the frame.
+
+    ``(x, y)`` are frame-local pixel coords (window-relative). Checks a small
+    square around the point so a 1–2px aim slip does not false-abort. Used as a
+    last-moment pre-click verify after the mouse has moved.
+    """
+    if frame_bgr is None or frame_bgr.size == 0:
+        return False
+    h, w = frame_bgr.shape[:2]
+    if w < 1 or h < 1:
+        return False
+    r = max(0, int(radius_px))
+    x0 = max(0, int(x) - r)
+    y0 = max(0, int(y) - r)
+    x1 = min(w, int(x) + r + 1)
+    y1 = min(h, int(y) + r + 1)
+    if x0 >= x1 or y0 >= y1:
+        return False
+    patch = frame_bgr[y0:y1, x0:x1]
+    return bool(np.any(zombie_mask(patch, cfg)))

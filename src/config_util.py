@@ -54,3 +54,19 @@ def load_merged(path: Path | None = None) -> dict[str, Any] | None:
     if not defaults:
         return live
     return deep_merge(defaults, live)
+
+
+def patch_live(updates: dict[str, Any], path: Path | None = None) -> None:
+    """Merge ``updates`` into the live ``config.json`` (create from defaults if needed).
+
+    Used to persist overlay toggles (attack / eat / loot mode) across restarts.
+    """
+    live_path = path or CONFIG_PATH
+    if live_path.exists():
+        with open(live_path) as f:
+            live = json.load(f)
+    else:
+        live = load_defaults()
+    live = deep_merge(live, updates)
+    with open(live_path, "w") as f:
+        json.dump(live, f, indent=2)

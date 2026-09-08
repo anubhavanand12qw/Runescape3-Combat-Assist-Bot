@@ -1,7 +1,7 @@
-"""Single-pixel watchers for health, adrenaline, and the target bar.
+"""Single-pixel watchers for health, adrenaline, target bar, and loot.
 
-Set in ``mark.py`` (keys ``h`` / ``d`` / ``t``). Each probe stores a window
-fraction and the BGR colour sampled at save time:
+Set in ``mark.py`` (keys ``h`` / ``d`` / ``t`` / ``l`` / ``i``). Each probe
+stores a window fraction and the BGR colour sampled at save time:
 
 * **health** — sample the red fill at your eat threshold. When the live pixel
   *changes* from that colour, press food.
@@ -9,6 +9,8 @@ fraction and the BGR colour sampled at save time:
   as fighting.
 * **target_bar** — sample a pixel of the top target-info bar while engaged.
   When that colour *appears* (matches), treat as under attack.
+* **loot_button** — sample while loot UI is visible; *match* ⇒ button present.
+* **loot_inventory** — sample a blank inventory slot; *change* ⇒ loot present.
 """
 
 from __future__ import annotations
@@ -71,6 +73,11 @@ def _probe_entry(probes: dict | None, name: str) -> dict | None:
     if not (isinstance(bgr, (list, tuple)) and len(bgr) >= 3):
         return None
     return entry
+
+
+def get_probe(probes: dict | None, name: str) -> dict | None:
+    """Return a normalized probe entry, or None if missing/invalid."""
+    return _probe_entry(probes, name)
 
 
 def has_probe(probes: dict | None, name: str) -> bool:

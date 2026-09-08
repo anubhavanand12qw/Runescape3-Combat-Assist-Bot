@@ -13,6 +13,7 @@ from __future__ import annotations
 import math
 import random
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import Quartz
@@ -130,8 +131,15 @@ def press_human(key: str, human_cfg: dict | None = None,
 
 
 def click_human(x: int, y: int, human_cfg: dict | None = None,
-                mode: str = "hid", pid: int | None = None) -> None:
-    """Curved human move, then a click locked to the exact target pixel."""
+                mode: str = "hid", pid: int | None = None,
+                pre_click_ok: Callable[[], bool] | None = None) -> bool:
+    """Curved human move, then a click locked to the exact target pixel.
+
+    Args:
+        pre_click_ok: Optional zero-arg callable invoked after the cursor is on
+            target and just before mouse-down. If it returns False, the click is
+            aborted (NPC walked away). Returns True if the click was sent.
+    """
     hcfg = human_cfg or {}
     tx, ty = float(x), float(y)
     pre_move = _uniform(_cfg(hcfg, "pre_move_delay_s", [0.03, 0.10]), (0.03, 0.10))
@@ -145,6 +153,9 @@ def click_human(x: int, y: int, human_cfg: dict | None = None,
     _move_event(tx, ty, mode, pid)
     time.sleep(random.uniform(0.01, 0.025))
 
+    if pre_click_ok is not None and not pre_click_ok():
+        return False
+
     hold = _uniform(_cfg(hcfg, "click_hold_s", [0.04, 0.08]), (0.04, 0.08))
     source = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
     down = Quartz.CGEventCreateMouseEvent(
@@ -157,6 +168,7 @@ def click_human(x: int, y: int, human_cfg: dict | None = None,
 
     post = _uniform(_cfg(hcfg, "post_click_delay_s", [0.05, 0.12]), (0.05, 0.12))
     time.sleep(post)
+    return True
 
 
 @dataclass
@@ -184,10 +196,11 @@ class HumanSession:
         self._next_break_at = time.monotonic() + gap
         self._break_after_actions = n
 
-    def maybe_break(self) -> str | None:
-        """Take a short idle break if due. Returns a status string or None.
+    def maybe_break(self) -> tuple[str, float] | None:
+        """Take a short idle break if due.
 
-        Call this before ability keys — never immediately before a target click.
+        Returns ``(status, duration_s)`` when a break ran, else ``None``.
+        Call before ability keys — never immediately before a target click.
         """
         self._actions_since_break += 1
         due = (
@@ -212,7 +225,7 @@ class HumanSession:
         else:
             time.sleep(dur)
         self.schedule_next_break()
-        return f"human break {dur:.1f}s"
+        return f"human break {dur:.1f}s", dur
 
     def wait_wander(self, bounds: tuple[int, int, int, int],
                     mode: str = "hid", pid: int | None = None) -> None:
