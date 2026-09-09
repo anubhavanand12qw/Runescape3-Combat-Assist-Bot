@@ -206,7 +206,7 @@ def render(*, hp: float, adren: float, fighting: bool, reason: str,
            cyan_avoid_enabled: bool = False,
            cyan_avoid_size_px: float = 100.0,
            retarget_cooldown_s: list | tuple | float = (4.5, 6.0),
-           free_max_bar_hold_s: float = 40.0,
+           free_max_bar_hold_s: list | tuple | float = (30.0, 40.0),
            static_still_s: float = 2.0,
            target_bar_arm_s: float = 3.0,
            loot_interval_s: list | tuple = (2.0, 5.0),
@@ -303,7 +303,7 @@ def render(*, hp: float, adren: float, fighting: bool, reason: str,
     sz = int(round(float(cyan_avoid_size_px)))
     _stepper_row(c, HIT_CYAN_SZ[1], "Cyan box", f"{sz}x{sz}")
     _stepper_row(c, HIT_CD[1], "Bar wait", _pair_txt(retarget_cooldown_s))
-    _stepper_row(c, HIT_HARD[1], "Hard hold", f"{float(free_max_bar_hold_s):.0f}s")
+    _stepper_row(c, HIT_HARD[1], "Hard hold", _pair_txt(free_max_bar_hold_s))
     _stepper_row(c, HIT_STILL_S[1], "Still time", f"{float(static_still_s):.1f}s")
     _stepper_row(c, HIT_ARM[1], "Bar arm", f"{float(target_bar_arm_s):.1f}s")
     _stepper_row(c, HIT_LOOT_GAP[1], "Loot gap", _pair_txt(loot_interval_s))

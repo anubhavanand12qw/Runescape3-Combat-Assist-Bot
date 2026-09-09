@@ -213,7 +213,7 @@ Edit `config.json` after first save (or copy from `config.default.json`). Overla
 | `bury.bury_key` | Default `"]"` |
 | `targeting.target_bar_arm_s` | Seconds to wait for bar after a click |
 | `targeting.retarget_cooldown_s` | `[lo, hi]` watch after bar clears (e.g. `[4.5, 6]`) |
-| `targeting.free_max_bar_hold_s` | Free-mode hard hold before force retarget |
+| `targeting.free_max_bar_hold_s` | Free-mode hard hold before force retarget (`[lo, hi]` seconds, rolled per engagement) |
 | `targeting.free_min_match_area` | Free only: min colour-cluster size (default 12; zoom-out friendly) |
 | `targeting.cyan_avoid_enabled` | Pre-click: abort if cyan trap colour in `cyan_avoid_size_px` box (default off) |
 | `targeting.cyan_avoid_size_px` | Cyan check window (default 100 → 100×100) |

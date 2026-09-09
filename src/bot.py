@@ -74,6 +74,8 @@ class Bot:
     _free_expect_bar: bool = field(default=False, init=False)
     _free_saw_bar: bool = field(default=False, init=False)
     _free_bar_on_since: float = field(default=-1e9, init=False)
+    # Rolled once when the target bar appears (supports [lo, hi] hard hold).
+    _free_bar_hold_limit_s: float = field(default=40.0, init=False)
     # After a fight bar clears: watch this window for an auto-new target bar
     # before searching/clicking another NPC.
     _free_post_clear_watch: bool = field(default=False, init=False)
@@ -214,8 +216,21 @@ class Bot:
         attempt and again when the target bar clears, so we can watch for an
         auto-acquired second target before clicking elsewhere.
         """
-        raw = (self.cfg.get("targeting") or {}).get(
-            "retarget_cooldown_s", [4.5, 6.0])
+        return self._roll_targeting_range(
+            "retarget_cooldown_s", default=(4.5, 6.0))
+
+    def _roll_free_max_bar_hold(self) -> float:
+        """Seconds to hold TARGET BAR before force-retarget (free method).
+
+        ``targeting.free_max_bar_hold_s`` may be a number or ``[lo, hi]``.
+        """
+        return self._roll_targeting_range(
+            "free_max_bar_hold_s", default=(30.0, 40.0))
+
+    def _roll_targeting_range(self, key: str, *, default: tuple[float, float]
+                              ) -> float:
+        """Uniform roll from a targeting scalar or ``[lo, hi]`` pair."""
+        raw = (self.cfg.get("targeting") or {}).get(key, default)
         if isinstance(raw, (list, tuple)) and len(raw) == 2:
             lo, hi = float(raw[0]), float(raw[1])
             if hi < lo:
@@ -224,6 +239,11 @@ class Bot:
                 return max(0.0, lo)
             return random.uniform(lo, hi)
         return max(0.0, float(raw))
+
+    def _free_max_bar_hold_cfg(self):
+        """Config value for overlay (pair or scalar)."""
+        return (self.cfg.get("targeting") or {}).get(
+            "free_max_bar_hold_s", [30.0, 40.0])
 
     def _persist_behavior(self) -> None:
         """Write behavior toggles into config.json so they survive restarts."""
@@ -310,6 +330,7 @@ class Bot:
         self._free_expect_bar = False
         self._free_saw_bar = False
         self._free_bar_on_since = -1e9
+        self._free_bar_hold_limit_s = 40.0
         self._free_post_clear_watch = False
         self._free_force_retarget = False
         self._free_need_bar_edge = False
@@ -462,13 +483,17 @@ class Bot:
             self._persist_targeting()
             self._last_action = f"bar wait → {tcfg['retarget_cooldown_s']}"
         elif hit == "hard_dec":
-            self._nudge_scalar("free_max_bar_hold_s", -5.0,
-                               minimum=10.0, maximum=180.0, as_int=True)
-            return
+            tcfg["free_max_bar_hold_s"] = self._nudge_pair(
+                tcfg.get("free_max_bar_hold_s", [30.0, 40.0]), -1.0,
+                lo_min=1.0, hi_max=180.0)
+            self._persist_targeting()
+            self._last_action = f"hard hold → {tcfg['free_max_bar_hold_s']}"
         elif hit == "hard_inc":
-            self._nudge_scalar("free_max_bar_hold_s", 5.0,
-                               minimum=10.0, maximum=180.0, as_int=True)
-            return
+            tcfg["free_max_bar_hold_s"] = self._nudge_pair(
+                tcfg.get("free_max_bar_hold_s", [30.0, 40.0]), 1.0,
+                lo_min=1.0, hi_max=180.0)
+            self._persist_targeting()
+            self._last_action = f"hard hold → {tcfg['free_max_bar_hold_s']}"
         elif hit == "still_s_dec":
             self._nudge_scalar("static_still_s", -0.5,
                                minimum=0.0, maximum=8.0)
@@ -611,7 +636,7 @@ class Bot:
             cyan_avoid_enabled=self._cyan_avoid_enabled(),
             cyan_avoid_size_px=float(tcfg.get("cyan_avoid_size_px", 100)),
             retarget_cooldown_s=tcfg.get("retarget_cooldown_s", [4.5, 6.0]),
-            free_max_bar_hold_s=float(tcfg.get("free_max_bar_hold_s", 40.0)),
+            free_max_bar_hold_s=self._free_max_bar_hold_cfg(),
             static_still_s=float(tcfg.get(
                 "static_still_s", static_target.DEFAULT_STILL_S)),
             target_bar_arm_s=float(tcfg.get("target_bar_arm_s", 3.0)),
@@ -1117,7 +1142,6 @@ class Bot:
         self._target_count = len(found)
 
         arm_s = float(tcfg.get("target_bar_arm_s", 3.0))
-        max_bar_hold_s = float(tcfg.get("free_max_bar_hold_s", 40.0))
         force_skip_r = int(tcfg.get("force_retarget_skip_radius_px", 100))
         since_click = now - self._clicked_at
         waiting_for_bar = (
@@ -1158,13 +1182,15 @@ class Bot:
                 if not self._free_saw_bar:
                     self._free_saw_bar = True
                     self._free_bar_on_since = now
+                    self._free_bar_hold_limit_s = self._roll_free_max_bar_hold()
                     self._free_post_clear_watch = False
-                if (now - self._free_bar_on_since) >= max_bar_hold_s:
+                hold_limit = self._free_bar_hold_limit_s
+                if (now - self._free_bar_on_since) >= hold_limit:
                     self._free_expect_bar = False
                     self._free_saw_bar = False
                     self._free_post_clear_watch = False
                     self._free_force_retarget = True
-                    # Short delay only — full 4.5–6s watch is for real bar-clear.
+                    # Short delay only — full bar-wait watch is for real bar-clear.
                     delay = tcfg.get("free_force_delay_s", [0.25, 0.7])
                     if isinstance(delay, (list, tuple)) and len(delay) == 2:
                         lo, hi = float(delay[0]), float(delay[1])
@@ -1175,7 +1201,7 @@ class Bot:
                         wait = 0.4
                     self._retarget_after = now + max(0.0, wait)
                     print(
-                        f"FREE hard-limit {max_bar_hold_s:.0f}s — "
+                        f"FREE hard-limit {hold_limit:.1f}s — "
                         f"forcing different target in {wait:.1f}s")
             elif self._free_saw_bar and not self._free_need_bar_edge:
                 # Fight ended — watch for auto-next target before clicking.
@@ -1196,6 +1222,7 @@ class Bot:
             self._free_expect_bar = True
             self._free_saw_bar = True
             self._free_bar_on_since = now
+            self._free_bar_hold_limit_s = self._roll_free_max_bar_hold()
             self._free_post_clear_watch = False
 
         bar_holding = bool(
@@ -1209,11 +1236,12 @@ class Bot:
         hp_ok = (hp >= 0.5) if self._use_probes else hp > (retarget_pct / 100.0)
         click_in: float | None = None
         pool = found
+        hold_limit = self._free_bar_hold_limit_s
 
         if bar_holding:
             allow_click = False
             gate = "TARGET BAR"
-            click_in = max(0.0, max_bar_hold_s - (now - self._free_bar_on_since))
+            click_in = max(0.0, hold_limit - (now - self._free_bar_on_since))
         elif waiting_for_bar:
             allow_click = False
             gate = "WAIT BAR"
@@ -1231,10 +1259,11 @@ class Bot:
                 self._free_expect_bar = True
                 self._free_saw_bar = True
                 self._free_bar_on_since = now
+                self._free_bar_hold_limit_s = self._roll_free_max_bar_hold()
                 self._free_post_clear_watch = False
                 allow_click = False
                 gate = "TARGET BAR"
-                click_in = max_bar_hold_s
+                click_in = self._free_bar_hold_limit_s
             else:
                 if self._free_post_clear_watch:
                     self._free_post_clear_watch = False

@@ -286,27 +286,27 @@
     ],
     "polygon_offset": [
       [
-        -0.18772,
-        -0.28947
+        -0.18713,
+        -0.22166
       ],
       [
-        0.15146,
-        -0.29352
+        0.15205,
+        -0.22571
       ],
       [
-        0.15146,
-        0.26417
+        0.15205,
+        0.33198
       ],
       [
-        -0.18889,
-        0.26417
+        -0.1883,
+        0.33198
       ]
     ],
     "search_rect": [
-      0.1322,
-      0.0496,
-      0.8392,
-      0.9889
+      0.1398,
+      0.1326,
+      0.8368,
+      0.8613
     ],
     "default_search_frac": [
       0.05,
@@ -338,12 +338,15 @@
   "targeting": {
     "enabled": true,
     "click_nearest": true,
-    "target_bar_arm_s": 4.0,
+    "target_bar_arm_s": 1.0,
     "retarget_cooldown_s": [
-      3.0,
-      4.5
+      0.5,
+      2.0
     ],
-    "free_max_bar_hold_s": 20,
+    "free_max_bar_hold_s": [
+      3.0,
+      5.0
+    ],
     "free_force_delay_s": [
       0.25,
       0.7
@@ -354,7 +357,7 @@
     "cyan_avoid_enabled": false,
     "cyan_avoid_size_px": 100,
     "cyan_avoid_min_pixels": 60,
-    "static_still_s": 2.0,
+    "static_still_s": 1.5,
     "static_match_radius_px": 28,
     "min_blob_area": 180,
     "max_blob_area": 25000,
@@ -365,29 +368,19 @@
     "exclude_tolerance": 22,
     "zombie_colors_bgr": [
       [
-        67,
-        62,
-        184
+        15,
+        12,
+        106
       ],
       [
-        23,
-        19,
-        140
+        11,
+        7,
+        125
       ],
       [
-        47,
-        43,
-        164
-      ],
-      [
-        74,
-        70,
-        191
-      ],
-      [
-        81,
-        77,
-        198
+        14,
+        9,
+        130
       ]
     ],
     "zombie_exclude_bgr": []

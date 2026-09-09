@@ -247,7 +247,7 @@
     "click_nearest": true,
     "target_bar_arm_s": 3.0,
     "retarget_cooldown_s": [4.5, 6.0],
-    "free_max_bar_hold_s": 40.0,
+    "free_max_bar_hold_s": [30.0, 40.0],
     "free_force_delay_s": [0.25, 0.7],
     "force_retarget_skip_radius_px": 100,
     "miss_skip_radius_px": 55,
