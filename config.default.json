@@ -39,14 +39,15 @@
   "overlay": true,
   "aoi_overlay": true,
   "behavior": {
-    "_comment": "Overlay: b/m/e/o/i/u. free_require_still false=no 2s wait (pre-click verify still runs). bury_mode: off|after_combat|always.",
+    "_comment": "Overlay: b/m/e/o/i/u/s/f. free_require_still false=no 2s wait (pre-click verify still runs). bury_mode: off|after_combat|always. quit_on_eat_fail: stop bot after eat fail ×eat_max_failures.",
     "attack_style": "bot",
     "attack_method": "pixel",
     "eat_mode": "low_hp",
     "loot_mode": "off",
     "loot_use_inv": false,
     "bury_mode": "off",
-    "free_require_still": false
+    "free_require_still": false,
+    "quit_on_eat_fail": false
   },
   "loot": {
     "_comment": "after_combat/target: Space when target bar clears. always: Space every always_interval_s (random). always + loot_use_inv true: probe-gated with same gap. post_combat_delay_s = reaction wait.",

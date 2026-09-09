@@ -96,6 +96,7 @@ class Bot:
     # Kill proxy: target-bar ON→OFF edges this session (overlay only).
     _session_started_at: float = field(default=0.0, init=False)
     _kills: int = field(default=0, init=False)
+    _session_summary_printed: bool = field(default=False, init=False)
 
     def __post_init__(self) -> None:
         self._grab = capture.Grabber()
@@ -138,6 +139,7 @@ class Bot:
         self.cfg["behavior"].setdefault("loot_use_inv", False)
         self.cfg["behavior"].setdefault("bury_mode", "off")
         self.cfg["behavior"].setdefault("free_require_still", False)
+        self.cfg["behavior"].setdefault("quit_on_eat_fail", False)
         self.cfg.setdefault("loot", {})
         self.cfg.setdefault("bury", {})
         self.cfg.setdefault("targeting", {})
@@ -184,6 +186,10 @@ class Bot:
     def _free_require_still(self) -> bool:
         """When False, free mode skips the 2s stillness wait (pre-click verify stays)."""
         return bool(self._behavior().get("free_require_still", False))
+
+    def _quit_on_eat_fail(self) -> bool:
+        """When True, eat fail ×N prints kills and fully stops the bot."""
+        return bool(self._behavior().get("quit_on_eat_fail", False))
 
     def _is_human(self) -> bool:
         return self._attack_style() == "human"
@@ -403,6 +409,20 @@ class Bot:
                  else " (click ASAP; pre-click pixel verify kept)"))
         self._persist_behavior()
 
+    def _toggle_quit_on_eat_fail(self, force: bool | None = None) -> None:
+        b = self._behavior()
+        if force is None:
+            b["quit_on_eat_fail"] = not self._quit_on_eat_fail()
+        else:
+            b["quit_on_eat_fail"] = bool(force)
+        on = bool(b["quit_on_eat_fail"])
+        n = int(self.cfg.get("eat_max_failures", 2))
+        self._last_action = f"food quit → {'on' if on else 'off'}"
+        print(f"Food quit: {'on' if on else 'off'}"
+              + (f" (stop bot after eat fail ×{n})" if on
+                 else " (SAFE STOP pause only)"))
+        self._persist_behavior()
+
     def _apply_overlay_stepper(self, hit: str) -> None:
         """Handle −/+ overlay hits for free timers and loot/bury gaps."""
         tcfg = self.cfg.setdefault("targeting", {})
@@ -512,6 +532,10 @@ class Bot:
             self._toggle_free_require_still(False)
         elif hit == "free_still_on":
             self._toggle_free_require_still(True)
+        elif hit == "food_quit_off":
+            self._toggle_quit_on_eat_fail(False)
+        elif hit == "food_quit_on":
+            self._toggle_quit_on_eat_fail(True)
         elif hit and (
             hit.endswith("_dec") or hit.endswith("_inc")
         ):
@@ -659,10 +683,33 @@ class Bot:
         if self._eat_failures >= max_fails:
             self._eat_suspended = True
             self._eat_resume_ok_since = None
-            self._last_action = (
-                f"SAFE STOP: eat failed x{self._eat_failures} "
-                f"— loot/bury/combat paused")
-            print(self._last_action)
+            if self._quit_on_eat_fail():
+                now = time.time()
+                elapsed_m = 0.0
+                if self._session_started_at > 0.0:
+                    elapsed_m = (now - self._session_started_at) / 60.0
+                kph = self._kills_per_hour(now)
+                self._last_action = (
+                    f"SAFE STOP: eat failed x{self._eat_failures} — quitting")
+                print(self._last_action)
+                self._print_session_kills()
+                try:
+                    self._log.write(json.dumps({
+                        "t": round(now, 3),
+                        "action": "eat_fail_quit",
+                        "eat_failures": self._eat_failures,
+                        "kills": self._kills,
+                        "kills_per_hour": round(kph, 1),
+                        "elapsed_m": round(elapsed_m, 2),
+                    }) + "\n")
+                except OSError:
+                    pass
+                self.stop = True
+            else:
+                self._last_action = (
+                    f"SAFE STOP: eat failed x{self._eat_failures} "
+                    f"— loot/bury/combat paused")
+                print(self._last_action)
 
     def _maybe_resume_eat(self, hp: float, threshold: float, now: float) -> None:
         """Resume eat/loot/combat only after HP stays OK for a short hold."""
@@ -750,6 +797,18 @@ class Bot:
             return 0.0
         elapsed_h = max((now - started) / 3600.0, 1.0 / 60.0)
         return self._kills / elapsed_h
+
+    def _print_session_kills(self, *, prefix: str = "Session kills") -> None:
+        """Print kills once per session (food-quit path or clean stop)."""
+        if self._session_summary_printed:
+            return
+        now = time.time()
+        elapsed_m = 0.0
+        if self._session_started_at > 0.0:
+            elapsed_m = (now - self._session_started_at) / 60.0
+        kph = self._kills_per_hour(now)
+        print(f"{prefix}: {self._kills}  ({kph:.0f}/hr over {elapsed_m:.1f}m)")
+        self._session_summary_printed = True
 
     def _maybe_loot(self, frame: np.ndarray, win, now: float) -> str | None:
         """Press Space (only) with human timing when loot mode says so."""
@@ -1365,11 +1424,14 @@ class Bot:
         targeting_on = (self.cfg.get("targeting") or {}).get("enabled", False)
 
         print("Bot running.  F12 = pause/resume,  Esc x3 = stop,  Ctrl-C = stop")
-        print("Overlay: click Attack/Method/Eat/Loot/Bury/Inv/Still +/−, "
-              "or b / m / e / o / i / u / s  (q = quit)")
+        print("Overlay: click Attack/Method/Eat/Loot/Bury/Inv/Still/Food quit +/−, "
+              "or b / m / e / o / i / u / s / f  (q = quit)")
         print("Kills = target-bar clear count (session); shown on overlay as kills/hr.")
+        print("Food quit off = SAFE STOP pause only; on = print kills and exit after "
+              f"eat fail ×{int(self.cfg.get('eat_max_failures', 2))}.")
         self._session_started_at = time.time()
         self._kills = 0
+        self._session_summary_printed = False
         if self.dry_run:
             print("DRY RUN: reading everything, pressing/clicking nothing.")
         elif not ability_keys:
@@ -1389,7 +1451,8 @@ class Bot:
               f"  |  Loot: {self._loot_mode()}"
               f"  |  Bury: {self._bury_mode()}"
               f"  |  Inv box: {'on' if self._loot_use_inv() else 'off'}"
-              f"  |  Free still: {'on' if self._free_require_still() else 'off'}")
+              f"  |  Free still: {'on' if self._free_require_still() else 'off'}"
+              f"  |  Food quit: {'on' if self._quit_on_eat_fail() else 'off'}")
         print("Eat + loot + bury keys always use human timing (pre/hold/post delays).")
         print("Loot target = Space after target bar clears; always = Space every 2–5s random "
               "(Inv box off = no inventory/button probes).")
@@ -1506,6 +1569,7 @@ class Bot:
                     loot_use_inv=self._loot_use_inv(),
                     bury_mode=self._bury_mode(),
                     free_require_still=self._free_require_still(),
+                    quit_on_eat_fail=self._quit_on_eat_fail(),
                     retarget_cooldown_s=tcfg.get(
                         "retarget_cooldown_s", [4.5, 6.0]),
                     free_max_bar_hold_s=float(
@@ -1539,6 +1603,8 @@ class Bot:
                     self._toggle_bury_mode()
                 elif key == ord("s"):
                     self._toggle_free_require_still()
+                elif key == ord("f"):
+                    self._toggle_quit_on_eat_fail()
 
             slept = time.time() - tick
             if slept < period:
@@ -1547,10 +1613,8 @@ class Bot:
         if show or show_aoi:
             cv2.destroyAllWindows()
         self._log.close()
-        elapsed_m = 0.0
-        if self._session_started_at > 0.0:
-            elapsed_m = (time.time() - self._session_started_at) / 60.0
-        kph = self._kills_per_hour(time.time())
-        print(f"Stopped.  Session kills: {self._kills}  "
-              f"({kph:.0f}/hr over {elapsed_m:.1f}m)")
+        if self._session_summary_printed:
+            print("Stopped.")
+        else:
+            self._print_session_kills(prefix="Stopped.  Session kills")
         return 0
