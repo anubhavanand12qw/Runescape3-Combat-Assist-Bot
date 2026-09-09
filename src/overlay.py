@@ -5,7 +5,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-W, H = 430, 700
+W, H = 430, 764
 BG = (24, 22, 20)
 
 # Clickable toggle hit-boxes (x0, y0, x1, y1) in overlay pixels.
@@ -17,12 +17,14 @@ HIT_LOOT_INV = (8, 364, 420, 394)
 HIT_BURY = (8, 396, 420, 426)
 HIT_FREE_STILL = (8, 428, 420, 458)
 HIT_FOOD_QUIT = (8, 460, 420, 490)  # quit after eat fail ×N
-HIT_CD = (8, 492, 420, 520)
-HIT_HARD = (8, 522, 420, 550)
-HIT_STILL_S = (8, 552, 420, 580)
-HIT_ARM = (8, 582, 420, 610)
-HIT_LOOT_GAP = (8, 612, 420, 640)
-HIT_BURY_GAP = (8, 642, 420, 670)
+HIT_CYAN_AVOID = (8, 492, 420, 522)  # skip click if cyan near cursor
+HIT_CYAN_SZ = (8, 524, 420, 552)     # cyan avoid box size
+HIT_CD = (8, 554, 420, 582)
+HIT_HARD = (8, 584, 420, 612)
+HIT_STILL_S = (8, 614, 420, 642)
+HIT_ARM = (8, 644, 420, 672)
+HIT_LOOT_GAP = (8, 674, 420, 702)
+HIT_BURY_GAP = (8, 704, 420, 732)
 
 _ATTACK_OPTS = ("bot", "human", "off")
 _METHOD_OPTS = ("pixel", "static", "free")
@@ -149,7 +151,12 @@ def hit_test(x: int, y: int) -> str | None:
             and HIT_FOOD_QUIT[1] <= y <= HIT_FOOD_QUIT[3]):
         mid = (HIT_FOOD_QUIT[0] + HIT_FOOD_QUIT[2]) // 2
         return "food_quit_off" if x < mid else "food_quit_on"
+    if (HIT_CYAN_AVOID[0] <= x <= HIT_CYAN_AVOID[2]
+            and HIT_CYAN_AVOID[1] <= y <= HIT_CYAN_AVOID[3]):
+        mid = (HIT_CYAN_AVOID[0] + HIT_CYAN_AVOID[2]) // 2
+        return "cyan_avoid_off" if x < mid else "cyan_avoid_on"
     for name, hit in (
+        ("cyan_sz", HIT_CYAN_SZ),
         ("cd", HIT_CD),
         ("hard", HIT_HARD),
         ("still_s", HIT_STILL_S),
@@ -176,6 +183,8 @@ def render(*, hp: float, adren: float, fighting: bool, reason: str,
            bury_mode: str = "off",
            free_require_still: bool = False,
            quit_on_eat_fail: bool = False,
+           cyan_avoid_enabled: bool = False,
+           cyan_avoid_size_px: float = 100.0,
            retarget_cooldown_s: list | tuple | float = (4.5, 6.0),
            free_max_bar_hold_s: float = 40.0,
            static_still_s: float = 2.0,
@@ -263,12 +272,16 @@ def render(*, hp: float, adren: float, fighting: bool, reason: str,
                   left_on=(not free_require_still))
     _checkbox_row(c, HIT_FOOD_QUIT[1], "Food quit", "off", "on",
                   left_on=(not quit_on_eat_fail))
+    _checkbox_row(c, HIT_CYAN_AVOID[1], "Cyan avoid", "off", "on",
+                  left_on=(not cyan_avoid_enabled))
 
     def _pair_txt(pair) -> str:
         if isinstance(pair, (list, tuple)) and len(pair) == 2:
             return f"{float(pair[0]):.1f}-{float(pair[1]):.1f}"
         return f"{float(pair):.1f}"
 
+    sz = int(round(float(cyan_avoid_size_px)))
+    _stepper_row(c, HIT_CYAN_SZ[1], "Cyan box", f"{sz}x{sz}")
     _stepper_row(c, HIT_CD[1], "Bar wait", _pair_txt(retarget_cooldown_s))
     _stepper_row(c, HIT_HARD[1], "Hard hold", f"{float(free_max_bar_hold_s):.0f}s")
     _stepper_row(c, HIT_STILL_S[1], "Still time", f"{float(static_still_s):.1f}s")
@@ -276,6 +289,6 @@ def render(*, hp: float, adren: float, fighting: bool, reason: str,
     _stepper_row(c, HIT_LOOT_GAP[1], "Loot gap", _pair_txt(loot_interval_s))
     _stepper_row(c, HIT_BURY_GAP[1], "Bury gap", _pair_txt(bury_interval_s))
 
-    cv2.putText(c, "b/m/e/o/i/u/s/f  steppers=[-/+]  q=quit",
+    cv2.putText(c, "b/m/e/o/i/u/s/f/c  steppers=[-/+]  q=quit",
                 (12, H - 8), f, 0.32, (120, 120, 120), 1)
     return c

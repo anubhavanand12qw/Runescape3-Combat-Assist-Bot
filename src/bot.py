@@ -97,6 +97,7 @@ class Bot:
     _session_started_at: float = field(default=0.0, init=False)
     _kills: int = field(default=0, init=False)
     _session_summary_printed: bool = field(default=False, init=False)
+    _click_abort_reason: str = field(default="", init=False)
 
     def __post_init__(self) -> None:
         self._grab = capture.Grabber()
@@ -143,6 +144,10 @@ class Bot:
         self.cfg.setdefault("loot", {})
         self.cfg.setdefault("bury", {})
         self.cfg.setdefault("targeting", {})
+        t0 = self.cfg["targeting"]
+        t0.setdefault("cyan_avoid_enabled", False)
+        t0.setdefault("cyan_avoid_size_px", 100)
+        t0.setdefault("cyan_avoid_min_pixels", 60)
         self._human = human.HumanSession(cfg=dict(self.cfg.get("human") or {}))
 
         Path("logs").mkdir(exist_ok=True)
@@ -190,6 +195,11 @@ class Bot:
     def _quit_on_eat_fail(self) -> bool:
         """When True, eat fail ×N prints kills and fully stops the bot."""
         return bool(self._behavior().get("quit_on_eat_fail", False))
+
+    def _cyan_avoid_enabled(self) -> bool:
+        """Pre-click cyan trap reject — only while attack is on."""
+        return bool((self.cfg.get("targeting") or {}).get(
+            "cyan_avoid_enabled", False))
 
     def _is_human(self) -> bool:
         return self._attack_style() == "human"
@@ -423,6 +433,19 @@ class Bot:
                  else " (SAFE STOP pause only)"))
         self._persist_behavior()
 
+    def _toggle_cyan_avoid(self, force: bool | None = None) -> None:
+        tcfg = self.cfg.setdefault("targeting", {})
+        if force is None:
+            tcfg["cyan_avoid_enabled"] = not self._cyan_avoid_enabled()
+        else:
+            tcfg["cyan_avoid_enabled"] = bool(force)
+        on = bool(tcfg["cyan_avoid_enabled"])
+        size = int(tcfg.get("cyan_avoid_size_px", 100))
+        self._last_action = f"cyan avoid → {'on' if on else 'off'}"
+        print(f"Cyan avoid: {'on' if on else 'off'}"
+              + (f" ({size}×{size}px before click)" if on else ""))
+        self._persist_targeting()
+
     def _apply_overlay_stepper(self, hit: str) -> None:
         """Handle −/+ overlay hits for free timers and loot/bury gaps."""
         tcfg = self.cfg.setdefault("targeting", {})
@@ -459,6 +482,14 @@ class Bot:
         elif hit == "arm_inc":
             self._nudge_scalar("target_bar_arm_s", 0.5,
                                minimum=0.5, maximum=10.0)
+            return
+        elif hit == "cyan_sz_dec":
+            self._nudge_scalar("cyan_avoid_size_px", -10.0,
+                               minimum=40.0, maximum=240.0, as_int=True)
+            return
+        elif hit == "cyan_sz_inc":
+            self._nudge_scalar("cyan_avoid_size_px", 10.0,
+                               minimum=40.0, maximum=240.0, as_int=True)
             return
         elif hit == "loot_gap_dec":
             lcfg = self.cfg.setdefault("loot", {})
@@ -536,6 +567,10 @@ class Bot:
             self._toggle_quit_on_eat_fail(False)
         elif hit == "food_quit_on":
             self._toggle_quit_on_eat_fail(True)
+        elif hit == "cyan_avoid_off":
+            self._toggle_cyan_avoid(False)
+        elif hit == "cyan_avoid_on":
+            self._toggle_cyan_avoid(True)
         elif hit and (
             hit.endswith("_dec") or hit.endswith("_inc")
         ):
@@ -621,21 +656,45 @@ class Bot:
             return True
         return False
 
-    def _target_pixel_still_ok(self, x: int, y: int, win) -> bool:
-        """Fresh grab: True if zombie colour is still under screen ``(x, y)``."""
-        frame = self._grab.grab(win.region)
+    def _target_pixel_still_ok(self, x: int, y: int, win,
+                               frame: np.ndarray | None = None) -> bool:
+        """True if zombie colour is still under screen ``(x, y)``."""
+        if frame is None:
+            frame = self._grab.grab(win.region)
         lx, ly = int(x - win.x), int(y - win.y)
         tcfg = self.cfg.get("targeting") or {}
         radius = int(tcfg.get("pre_click_verify_radius_px", 2))
         return targets.zombie_colour_under(
             frame, lx, ly, self.cfg, radius_px=radius)
 
-    def _click(self, x: int, y: int, win, why: str) -> bool:
-        """Move to target, verify zombie pixel is still there, then click.
+    def _cyan_trap_near(self, x: int, y: int, win,
+                        frame: np.ndarray | None = None) -> bool:
+        """True if cyan trap colour is near screen ``(x, y)``."""
+        if frame is None:
+            frame = self._grab.grab(win.region)
+        lx, ly = int(x - win.x), int(y - win.y)
+        return targets.cyan_near(frame, lx, ly, self.cfg)
 
-        Returns True if the click was sent (or dry-run). False if the pre-click
-        pixel check failed (NPC moved) — caller should pick another target.
+    def _pre_click_checks_ok(self, x: int, y: int, win) -> bool:
+        """Cyan trap (optional) then zombie pixel — False aborts the click."""
+        self._click_abort_reason = ""
+        frame = self._grab.grab(win.region)
+        if (self._attack_enabled() and self._cyan_avoid_enabled()
+                and self._cyan_trap_near(x, y, win, frame=frame)):
+            self._click_abort_reason = "cyan_trap"
+            return False
+        if not self._target_pixel_still_ok(x, y, win, frame=frame):
+            self._click_abort_reason = "pixel_gone"
+            return False
+        return True
+
+    def _click(self, x: int, y: int, win, why: str) -> bool:
+        """Move to target, verify no cyan trap + zombie pixel, then click.
+
+        Returns True if the click was sent (or dry-run). False if a pre-click
+        check failed — caller should pick another target.
         """
+        self._click_abort_reason = ""
         if self.dry_run:
             self._last_action = f"[dry run] would click ({x},{y}) ({why})"
             return True
@@ -644,18 +703,20 @@ class Bot:
             # Never break/fidget before a target click — delay = NPC walked away.
             ok = human.click_human(
                 x, y, self.cfg.get("human"), mode=mode, pid=win.pid,
-                pre_click_ok=lambda: self._target_pixel_still_ok(x, y, win),
+                pre_click_ok=lambda: self._pre_click_checks_ok(x, y, win),
             )
             if not ok:
+                reason = self._click_abort_reason or "pixel_gone"
                 self._last_action = (
-                    f"ABORT click — pixel gone at ({x},{y}) ({why})")
+                    f"ABORT click — {reason} at ({x},{y}) ({why})")
                 return False
         else:
             keys.move_to(x, y, mode=mode, pid=win.pid)
             time.sleep(0.015)
-            if not self._target_pixel_still_ok(x, y, win):
+            if not self._pre_click_checks_ok(x, y, win):
+                reason = self._click_abort_reason or "pixel_gone"
                 self._last_action = (
-                    f"ABORT click — pixel gone at ({x},{y}) ({why})")
+                    f"ABORT click — {reason} at ({x},{y}) ({why})")
                 return False
             keys.click_down_up(x, y, mode=mode, pid=win.pid)
         self._last_action = f"clicked ({x},{y}) ({why}) at {datetime.now():%H:%M:%S}"
@@ -1091,16 +1152,23 @@ class Bot:
 
                 # Skip last click / abort spot. Force path uses a wider skip so
                 # nearest-to-center does not re-click the same NPC forever.
+                # Cyan-trap aborts also use the avoid box size as skip radius.
                 if self._miss_xy is not None and found:
                     mx, my = self._miss_xy
-                    skip_r = force_skip_r if self._free_force_retarget else int(
-                        tcfg.get("miss_skip_radius_px", 55))
+                    if self._click_abort_reason == "cyan_trap":
+                        skip_r = int(tcfg.get("cyan_avoid_size_px", 100))
+                    elif self._free_force_retarget:
+                        skip_r = force_skip_r
+                    else:
+                        skip_r = int(tcfg.get("miss_skip_radius_px", 55))
                     skip_r2 = skip_r * skip_r
                     others = [t for t in found
                               if (t.x - mx) ** 2 + (t.y - my) ** 2 > skip_r2]
                     if others:
                         pool = others
-                        if not self._free_force_retarget:
+                        if self._click_abort_reason == "cyan_trap":
+                            gate = "CYAN SKIP"
+                        elif not self._free_force_retarget:
                             gate = "RETRY"
                     elif self._free_force_retarget and len(found) >= 1:
                         # No far-enough blob — pick farthest from last click.
@@ -1108,6 +1176,12 @@ class Bot:
                             found,
                             key=lambda t: (t.x - mx) ** 2 + (t.y - my) ** 2)]
                         gate = "FORCE RETRY"
+                    elif (self._click_abort_reason == "cyan_trap"
+                          and len(found) >= 1):
+                        pool = [max(
+                            found,
+                            key=lambda t: (t.x - mx) ** 2 + (t.y - my) ** 2)]
+                        gate = "CYAN SKIP"
 
         if self._eat_suspended:
             allow_click = False
@@ -1160,11 +1234,12 @@ class Bot:
         was_force = self._free_force_retarget
         clicked = self._click(pick.x, pick.y, win, why)
         if not clicked:
-            # Target walked off during mouse move — skip this spot, retry next tick.
+            # Target walked off / cyan trap — skip this spot, retry next tick.
             self._miss_xy = (pick.x, pick.y)
+            reason = self._click_abort_reason or "pixel_gone"
             self._log.write(json.dumps({
                 "t": round(now, 3), "action": "click_abort",
-                "x": pick.x, "y": pick.y, "reason": "pixel_gone",
+                "x": pick.x, "y": pick.y, "reason": reason,
                 "mode": "free", "dry_run": self.dry_run}) + "\n")
             return self._target_count, click_in
 
@@ -1315,13 +1390,23 @@ class Bot:
             gate = "READY"
             if self._miss_xy is not None and found:
                 mx, my = self._miss_xy
-                skip_r = int(tcfg.get("miss_skip_radius_px", 55))
+                if self._click_abort_reason == "cyan_trap":
+                    skip_r = int(tcfg.get("cyan_avoid_size_px", 100))
+                else:
+                    skip_r = int(tcfg.get("miss_skip_radius_px", 55))
                 skip_r2 = skip_r * skip_r
                 others = [t for t in found
                           if (t.x - mx) ** 2 + (t.y - my) ** 2 > skip_r2]
                 if others:
                     pool = others
-                    gate = "RETRY"
+                    gate = ("CYAN SKIP" if self._click_abort_reason == "cyan_trap"
+                            else "RETRY")
+                elif (self._click_abort_reason == "cyan_trap"
+                      and len(found) >= 1):
+                    pool = [max(
+                        found,
+                        key=lambda t: (t.x - mx) ** 2 + (t.y - my) ** 2)]
+                    gate = "CYAN SKIP"
 
         if self._eat_suspended:
             allow_click = False
@@ -1397,9 +1482,10 @@ class Bot:
         clicked = self._click(pick.x, pick.y, win, why)
         if not clicked:
             self._miss_xy = (pick.x, pick.y)
+            reason = self._click_abort_reason or "pixel_gone"
             self._log.write(json.dumps({
                 "t": round(now, 3), "action": "click_abort",
-                "x": pick.x, "y": pick.y, "reason": "pixel_gone",
+                "x": pick.x, "y": pick.y, "reason": reason,
                 "mode": pick_mode, "dry_run": self.dry_run}) + "\n")
             return self._target_count, click_in
 
@@ -1425,11 +1511,13 @@ class Bot:
         targeting_on = (self.cfg.get("targeting") or {}).get("enabled", False)
 
         print("Bot running.  F12 = pause/resume,  Esc x3 = stop,  Ctrl-C = stop")
-        print("Overlay: click Attack/Method/Eat/Loot/Bury/Inv/Still/Food quit +/−, "
-              "or b / m / e / o / i / u / s / f  (q = quit)")
+        print("Overlay: click Attack/Method/Eat/Loot/Bury/Inv/Still/Food quit/Cyan +/−, "
+              "or b / m / e / o / i / u / s / f / c  (q = quit)")
         print("Kills = target-bar clear count (session); shown on overlay as kills/hr.")
         print("Food quit off = SAFE STOP pause only; on = print kills and exit after "
               f"eat fail ×{int(self.cfg.get('eat_max_failures', 2))}.")
+        print("Cyan avoid off by default (dungeon cyan tiles false-trigger). "
+              "Turn on near real traps; adjust Cyan box if needed.")
         self._session_started_at = time.time()
         self._kills = 0
         self._session_summary_printed = False
@@ -1453,7 +1541,8 @@ class Bot:
               f"  |  Bury: {self._bury_mode()}"
               f"  |  Inv box: {'on' if self._loot_use_inv() else 'off'}"
               f"  |  Free still: {'on' if self._free_require_still() else 'off'}"
-              f"  |  Food quit: {'on' if self._quit_on_eat_fail() else 'off'}")
+              f"  |  Food quit: {'on' if self._quit_on_eat_fail() else 'off'}"
+              f"  |  Cyan avoid: {'on' if self._cyan_avoid_enabled() else 'off'}")
         print("Eat + loot + bury keys always use human timing (pre/hold/post delays).")
         print("Loot target = Space after target bar clears; always = Space every 2–5s random "
               "(Inv box off = no inventory/button probes).")
@@ -1571,6 +1660,9 @@ class Bot:
                     bury_mode=self._bury_mode(),
                     free_require_still=self._free_require_still(),
                     quit_on_eat_fail=self._quit_on_eat_fail(),
+                    cyan_avoid_enabled=self._cyan_avoid_enabled(),
+                    cyan_avoid_size_px=float(
+                        tcfg.get("cyan_avoid_size_px", 100)),
                     retarget_cooldown_s=tcfg.get(
                         "retarget_cooldown_s", [4.5, 6.0]),
                     free_max_bar_hold_s=float(
@@ -1606,6 +1698,8 @@ class Bot:
                     self._toggle_free_require_still()
                 elif key == ord("f"):
                     self._toggle_quit_on_eat_fail()
+                elif key == ord("c"):
+                    self._toggle_cyan_avoid()
 
             slept = time.time() - tick
             if slept < period:

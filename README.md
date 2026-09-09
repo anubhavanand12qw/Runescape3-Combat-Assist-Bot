@@ -214,6 +214,8 @@ Edit `config.json` after first save (or copy from `config.default.json`). Overla
 | `targeting.retarget_cooldown_s` | `[lo, hi]` watch after bar clears (e.g. `[4.5, 6]`) |
 | `targeting.free_max_bar_hold_s` | Free-mode hard hold before force retarget |
 | `targeting.free_min_match_area` | Free only: min colour-cluster size (default 12; zoom-out friendly) |
+| `targeting.cyan_avoid_enabled` | Pre-click: abort if cyan trap colour in `cyan_avoid_size_px` box (default off) |
+| `targeting.cyan_avoid_size_px` | Cyan check window (default 100 → 100×100) |
 | `targeting.static_still_s` | Stillness seconds (static method; free if Free still on) |
 | `targeting.click_nearest` | Prefer nearest-to-centre blob |
 | `behavior.attack_style` | `bot` \| `human` \| `off` |

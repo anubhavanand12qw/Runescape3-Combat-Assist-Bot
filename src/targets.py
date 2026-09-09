@@ -169,3 +169,47 @@ def zombie_colour_under(
         return False
     patch = frame_bgr[y0:y1, x0:x1]
     return bool(np.any(zombie_mask(patch, cfg)))
+
+
+# Bright trap cyan — saturated enough to skip grey rock; loose on hue.
+_DEFAULT_CYAN_HSV_LOW = (88, 90, 80)
+_DEFAULT_CYAN_HSV_HIGH = (110, 255, 255)
+
+
+def cyan_near(
+    frame_bgr: np.ndarray,
+    x: int,
+    y: int,
+    cfg: dict | None = None,
+) -> bool:
+    """True if bright cyan trap colour is inside a square around ``(x, y)``.
+
+    ``(x, y)`` are frame-local. Window side is ``targeting.cyan_avoid_size_px``
+    (default 100 → 100×100). Gated by ``cyan_avoid_enabled`` in the click path.
+    """
+    if frame_bgr is None or frame_bgr.size == 0:
+        return False
+    h, w = frame_bgr.shape[:2]
+    if w < 1 or h < 1:
+        return False
+    tcfg = (cfg or {}).get("targeting") or {}
+    size = max(8, int(tcfg.get("cyan_avoid_size_px", 100)))
+    half = size // 2
+    min_px = max(1, int(tcfg.get("cyan_avoid_min_pixels", 60)))
+    raw_lo = tcfg.get("cyan_avoid_hsv_low") or list(_DEFAULT_CYAN_HSV_LOW)
+    raw_hi = tcfg.get("cyan_avoid_hsv_high") or list(_DEFAULT_CYAN_HSV_HIGH)
+    lo = np.array([int(raw_lo[0]), int(raw_lo[1]), int(raw_lo[2])],
+                  dtype=np.uint8)
+    hi = np.array([int(raw_hi[0]), int(raw_hi[1]), int(raw_hi[2])],
+                  dtype=np.uint8)
+
+    x0 = max(0, int(x) - half)
+    y0 = max(0, int(y) - half)
+    x1 = min(w, int(x) + half)
+    y1 = min(h, int(y) + half)
+    if x0 >= x1 or y0 >= y1:
+        return False
+    patch = frame_bgr[y0:y1, x0:x1]
+    hsv = cv2.cvtColor(patch, cv2.COLOR_BGR2HSV)
+    mask = cv2.inRange(hsv, lo, hi)
+    return int(cv2.countNonZero(mask)) >= min_px
