@@ -111,6 +111,7 @@ python3 run.py              # for real
 | Overlay **Bury** | `off` · `target` · `always` — key `]` (human timing) |
 | Overlay **Inv box** | `off` = Space only · `on` = always also uses loot probes (`l`/`i`) |
 | Overlay **Free still** | `off` by default — skip 2s stillness in free mode (pre-click pixel verify still runs) |
+| Overlay **Cyan avoid** | `off` by default — before click, skip aim if cyan in `Cyan box` (default 100×100); hotkey `c` |
 | Overlay **+/−** | Bar wait, hard hold, still time, bar arm, loot gap, bury gap — persisted to `config.json` |
 | Overlay **kills / hr** | Target-bar clear count this session |
 | `b` / `m` / `e` / `o` / `i` / `u` / `s` | Cycle attack / method / eat / loot / inv / bury / free still |
