@@ -132,13 +132,18 @@ def press_human(key: str, human_cfg: dict | None = None,
 
 def click_human(x: int, y: int, human_cfg: dict | None = None,
                 mode: str = "hid", pid: int | None = None,
-                pre_click_ok: Callable[[], bool] | None = None) -> bool:
+                pre_click_ok: Callable[[], bool] | None = None,
+                pre_click_refine: Callable[[], tuple[int, int] | None] | None = None,
+                ) -> bool:
     """Curved human move, then a click locked to the exact target pixel.
 
     Args:
         pre_click_ok: Optional zero-arg callable invoked after the cursor is on
             target and just before mouse-down. If it returns False, the click is
-            aborted (NPC walked away). Returns True if the click was sent.
+            aborted (NPC walked away). Prefer ``pre_click_refine`` when the aim
+            may nudge slightly.
+        pre_click_refine: Optional callable returning screen ``(x, y)`` to click,
+            or ``None`` to abort. Runs after settle; may micro-move before down.
     """
     hcfg = human_cfg or {}
     tx, ty = float(x), float(y)
@@ -153,7 +158,14 @@ def click_human(x: int, y: int, human_cfg: dict | None = None,
     _move_event(tx, ty, mode, pid)
     time.sleep(random.uniform(0.01, 0.025))
 
-    if pre_click_ok is not None and not pre_click_ok():
+    if pre_click_refine is not None:
+        # Refine owns cyan → snap → (micro-move) → final pixel check.
+        # Do not move again after it — click is the next event.
+        refined = pre_click_refine()
+        if refined is None:
+            return False
+        tx, ty = float(refined[0]), float(refined[1])
+    elif pre_click_ok is not None and not pre_click_ok():
         return False
 
     hold = _uniform(_cfg(hcfg, "click_hold_s", [0.04, 0.08]), (0.04, 0.08))

@@ -48,7 +48,7 @@
     "bury_mode": "off",
     "free_require_still": false,
     "quit_on_eat_fail": false,
-    "rotate_screen": false
+    "rotate_screen": true
   },
   "loot": {
     "_comment": "after_combat/target: Space when target bar clears. always: Space every always_interval_s (random). always + loot_use_inv true: probe-gated with same gap.",
@@ -354,7 +354,11 @@
     ],
     "force_retarget_skip_radius_px": 100,
     "miss_skip_radius_px": 55,
-    "pre_click_verify_radius_px": 2,
+    "pre_click_verify_radius_px": 3,
+    "pre_click_snap_enabled": true,
+    "pre_click_snap_patch_px": 11,
+    "pre_click_min_match_px": 12,
+    "pre_click_max_snap_px": 3,
     "cyan_avoid_enabled": false,
     "cyan_avoid_size_px": 100,
     "cyan_avoid_min_pixels": 60,

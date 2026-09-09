@@ -160,6 +160,11 @@ class Bot:
         t0.setdefault("rotate_interval_s", [3.0, 10.0])
         t0.setdefault("rotate_hold_s", [0.5, 2.0])
         t0.setdefault("rotate_key", "right")
+        t0.setdefault("pre_click_snap_enabled", True)
+        t0.setdefault("pre_click_snap_patch_px", 11)
+        t0.setdefault("pre_click_min_match_px", 12)
+        t0.setdefault("pre_click_max_snap_px", 3)
+        t0.setdefault("pre_click_verify_radius_px", 3)
         self._human = human.HumanSession(cfg=dict(self.cfg.get("human") or {}))
 
         Path("logs").mkdir(exist_ok=True)
@@ -844,7 +849,7 @@ class Bot:
             frame = self._grab.grab(win.region)
         lx, ly = int(x - win.x), int(y - win.y)
         tcfg = self.cfg.get("targeting") or {}
-        radius = int(tcfg.get("pre_click_verify_radius_px", 2))
+        radius = int(tcfg.get("pre_click_verify_radius_px", 3))
         return targets.zombie_colour_under(
             frame, lx, ly, self.cfg, radius_px=radius)
 
@@ -856,21 +861,46 @@ class Bot:
         lx, ly = int(x - win.x), int(y - win.y)
         return targets.cyan_near(frame, lx, ly, self.cfg)
 
-    def _pre_click_checks_ok(self, x: int, y: int, win) -> bool:
-        """Cyan trap (optional) then zombie pixel — False aborts the click."""
+    def _pre_click_refine_aim(self, x: int, y: int, win
+                              ) -> tuple[int, int] | None:
+        """Cyan → snap/min-match → final pixel check. Returns screen aim or None.
+
+        Order is fixed for accuracy: optional cyan trap, then colour snap /
+        min-match on the same grab, then a **fresh** grab for the last pixel
+        check whenever the aim moved. Mouse-down must use the returned point.
+        """
         self._click_abort_reason = ""
-        frame = self._grab.grab(win.region)
+        mode = self.cfg.get("key_mode", "hid")
+        frame1 = self._grab.grab(win.region)
         if (self._attack_enabled() and self._cyan_avoid_enabled()
-                and self._cyan_trap_near(x, y, win, frame=frame)):
+                and self._cyan_trap_near(x, y, win, frame=frame1)):
             self._click_abort_reason = "cyan_trap"
-            return False
-        if not self._target_pixel_still_ok(x, y, win, frame=frame):
+            return None
+
+        lx, ly = int(x - win.x), int(y - win.y)
+        snapped = targets.snap_aim_to_colour(frame1, lx, ly, self.cfg)
+        if snapped is None:
+            self._click_abort_reason = "pixel_thin"
+            return None
+        nx_l, ny_l, _count = snapped
+        nx = int(win.x) + nx_l
+        ny = int(win.y) + ny_l
+        moved = (nx != int(x) or ny != int(y))
+        if moved:
+            keys.move_to(nx, ny, mode=mode, pid=win.pid)
+            time.sleep(0.008)
+            frame2 = self._grab.grab(win.region)
+        else:
+            frame2 = frame1
+
+        # Last gate before click — never skip.
+        if not self._target_pixel_still_ok(nx, ny, win, frame=frame2):
             self._click_abort_reason = "pixel_gone"
-            return False
-        return True
+            return None
+        return nx, ny
 
     def _click(self, x: int, y: int, win, why: str) -> bool:
-        """Move to target, verify no cyan trap + zombie pixel, then click.
+        """Move to target, cyan/snap/pixel-verify, then click the refined aim.
 
         Returns True if the click was sent (or dry-run). False if a pre-click
         check failed — caller should pick another target.
@@ -882,23 +912,34 @@ class Bot:
         mode = self.cfg.get("key_mode", "hid")
         if self._is_human():
             # Never break/fidget before a target click — delay = NPC walked away.
+            aim_box: list[int] = [x, y]
+
+            def _refine() -> tuple[int, int] | None:
+                got = self._pre_click_refine_aim(aim_box[0], aim_box[1], win)
+                if got is not None:
+                    aim_box[0], aim_box[1] = got
+                return got
+
             ok = human.click_human(
                 x, y, self.cfg.get("human"), mode=mode, pid=win.pid,
-                pre_click_ok=lambda: self._pre_click_checks_ok(x, y, win),
+                pre_click_refine=_refine,
             )
             if not ok:
                 reason = self._click_abort_reason or "pixel_gone"
                 self._last_action = (
                     f"ABORT click — {reason} at ({x},{y}) ({why})")
                 return False
+            x, y = aim_box[0], aim_box[1]
         else:
             keys.move_to(x, y, mode=mode, pid=win.pid)
             time.sleep(0.015)
-            if not self._pre_click_checks_ok(x, y, win):
+            got = self._pre_click_refine_aim(x, y, win)
+            if got is None:
                 reason = self._click_abort_reason or "pixel_gone"
                 self._last_action = (
                     f"ABORT click — {reason} at ({x},{y}) ({why})")
                 return False
+            x, y = got
             keys.click_down_up(x, y, mode=mode, pid=win.pid)
         self._last_action = f"clicked ({x},{y}) ({why}) at {datetime.now():%H:%M:%S}"
         return True

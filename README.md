@@ -218,6 +218,11 @@ Edit `config.json` after first save (or copy from `config.default.json`). Overla
 | `targeting.free_min_match_area` | Free only: min colour-cluster size (default 12; zoom-out friendly) |
 | `targeting.cyan_avoid_enabled` | Pre-click: abort if cyan trap colour in `cyan_avoid_size_px` box (default off) |
 | `targeting.cyan_avoid_size_px` | Cyan check window (default 100 → 100×100) |
+| `targeting.pre_click_snap_enabled` | Pre-click snap-to-colour + min-match (default on) |
+| `targeting.pre_click_snap_patch_px` | Odd patch size for snap (default 11) |
+| `targeting.pre_click_min_match_px` | Min matching pixels in patch (default 12) |
+| `targeting.pre_click_max_snap_px` | Max cursor nudge toward colour centroid (default 3) |
+| `targeting.pre_click_verify_radius_px` | Final pixel-check radius before mouse-down (default 3) |
 | `behavior.rotate_screen` | Periodic camera rotate via Right Arrow (default off) |
 | `targeting.rotate_interval_s` | Seconds between rotates (`[lo, hi]`, default 3–10) |
 | `targeting.rotate_hold_s` | Right Arrow hold (`[lo, hi]`, default 0.5–2) |

@@ -171,6 +171,78 @@ def zombie_colour_under(
     return bool(np.any(zombie_mask(patch, cfg)))
 
 
+def snap_aim_to_colour(
+    frame_bgr: np.ndarray,
+    x: int,
+    y: int,
+    cfg: dict | None = None,
+) -> tuple[int, int, int] | None:
+    """Refine aim to the colour centroid in a small patch (frame-local).
+
+    Between cyan-trap and the final pixel check: require
+    ``targeting.pre_click_min_match_px`` matching pixels in
+    ``pre_click_snap_patch_px``, then nudge toward the match centroid by at most
+    ``pre_click_max_snap_px``.
+
+    Returns:
+        ``(nx, ny, match_count)`` frame-local, or ``None`` if too few matches
+        / snap disabled with no colour under the point.
+    """
+    if frame_bgr is None or frame_bgr.size == 0:
+        return None
+    h, w = frame_bgr.shape[:2]
+    if w < 1 or h < 1:
+        return None
+    tcfg = (cfg or {}).get("targeting") or {}
+    if not bool(tcfg.get("pre_click_snap_enabled", True)):
+        # Snap off — still require at least one match near the tip.
+        if zombie_colour_under(
+            frame_bgr, x, y, cfg,
+            radius_px=int(tcfg.get("pre_click_verify_radius_px", 3)),
+        ):
+            return int(x), int(y), 1
+        return None
+
+    patch_sz = max(3, int(tcfg.get("pre_click_snap_patch_px", 11)))
+    if patch_sz % 2 == 0:
+        patch_sz += 1
+    half = patch_sz // 2
+    min_match = max(1, int(tcfg.get("pre_click_min_match_px", 12)))
+    max_snap = max(0, int(tcfg.get("pre_click_max_snap_px", 3)))
+
+    x0 = max(0, int(x) - half)
+    y0 = max(0, int(y) - half)
+    x1 = min(w, int(x) + half + 1)
+    y1 = min(h, int(y) + half + 1)
+    if x0 >= x1 or y0 >= y1:
+        return None
+    patch = frame_bgr[y0:y1, x0:x1]
+    mask = zombie_mask(patch, cfg)
+    count = int(np.count_nonzero(mask))
+    if count < min_match:
+        return None
+
+    ys, xs = np.where(mask)
+    # Mean centroid in frame coords.
+    cx = float(np.mean(xs)) + x0
+    cy = float(np.mean(ys)) + y0
+    dx = cx - float(x)
+    dy = cy - float(y)
+    dist = (dx * dx + dy * dy) ** 0.5
+    if dist > max_snap > 0:
+        scale = max_snap / dist
+        cx = float(x) + dx * scale
+        cy = float(y) + dy * scale
+    elif max_snap == 0:
+        cx, cy = float(x), float(y)
+
+    nx = int(round(cx))
+    ny = int(round(cy))
+    nx = max(0, min(w - 1, nx))
+    ny = max(0, min(h - 1, ny))
+    return nx, ny, count
+
+
 # Bright trap cyan — saturated enough to skip grey rock; loose on hue.
 _DEFAULT_CYAN_HSV_LOW = (88, 90, 80)
 _DEFAULT_CYAN_HSV_HIGH = (110, 255, 255)
