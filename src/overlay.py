@@ -94,14 +94,31 @@ def _three_option_row(canvas, y: int, label: str, options: tuple[str, ...],
                     (80, 220, 80) if on else (160, 160, 160), 1)
 
 
+# Glyph x positions for steppers — keep draw + hit_test in sync.
+_STEPPER_MINUS_X = 210
+_STEPPER_VALUE_X = 250
+_STEPPER_PLUS_X = 380
+# Clickable pads around [-] / [+] (not equal thirds of the whole row).
+_STEPPER_MINUS_X0 = 195
+_STEPPER_MINUS_X1 = 248
+_STEPPER_PLUS_X0 = 360
+_STEPPER_PLUS_X1 = 420
+
+
 def _stepper_row(canvas, y: int, label: str, value_txt: str) -> None:
     """Draw a − / value / + row for numeric settings."""
     f = cv2.FONT_HERSHEY_SIMPLEX
     cv2.rectangle(canvas, (8, y), (W - 10, y + 28), (40, 38, 36), -1)
     cv2.putText(canvas, label, (14, y + 19), f, 0.40, (200, 200, 200), 1)
-    cv2.putText(canvas, "[-]", (210, y + 19), f, 0.42, (180, 180, 255), 1)
-    cv2.putText(canvas, value_txt[:14], (250, y + 19), f, 0.40, (80, 220, 80), 1)
-    cv2.putText(canvas, "[+]", (380, y + 19), f, 0.42, (180, 180, 255), 1)
+    # Visible hit pads so minus/plus are obvious click targets.
+    cv2.rectangle(canvas, (_STEPPER_MINUS_X0, y + 3), (_STEPPER_MINUS_X1, y + 25),
+                  (55, 55, 90), -1)
+    cv2.rectangle(canvas, (_STEPPER_PLUS_X0, y + 3), (_STEPPER_PLUS_X1 - 2, y + 25),
+                  (55, 55, 90), -1)
+    cv2.putText(canvas, "[-]", (_STEPPER_MINUS_X, y + 19), f, 0.42, (180, 180, 255), 1)
+    cv2.putText(canvas, value_txt[:14], (_STEPPER_VALUE_X, y + 19), f, 0.40,
+                (80, 220, 80), 1)
+    cv2.putText(canvas, "[+]", (_STEPPER_PLUS_X, y + 19), f, 0.42, (180, 180, 255), 1)
 
 
 def _hit_third(hit: tuple[int, int, int, int], x: int,
@@ -116,12 +133,15 @@ def _hit_third(hit: tuple[int, int, int, int], x: int,
 
 
 def _stepper_dir(hit: tuple[int, int, int, int], x: int) -> str | None:
-    """Return 'dec' or 'inc' for a stepper row click, or None for middle."""
-    x0, _y0, x1, _y1 = hit
-    third = (x1 - x0) / 3.0
-    if x < x0 + third:
+    """Return 'dec' or 'inc' for clicks on drawn [-]/[+], not row thirds.
+
+    Equal thirds mapped the label to dec and put [-] in a dead zone, so clicks
+    near the value / toward [+] often registered as inc (minus felt inverted).
+    """
+    del hit  # row y already matched; x zones are global for all steppers
+    if _STEPPER_MINUS_X0 <= x <= _STEPPER_MINUS_X1:
         return "dec"
-    if x >= x1 - third:
+    if _STEPPER_PLUS_X0 <= x <= _STEPPER_PLUS_X1:
         return "inc"
     return None
 

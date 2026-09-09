@@ -50,6 +50,8 @@ class Bot:
     _last_action: str = field(default="nothing yet", init=False)
     _log: object = field(default=None, init=False)
     _overlay_ready: bool = field(default=False, init=False)
+    _overlay_dirty: bool = field(default=False, init=False)
+    _overlay_cache: dict = field(default_factory=dict, init=False)
     _use_probes: bool = field(default=False, init=False)
 
     # Eat fail-safe: stop pressing food after N failed attempts until HP recovers.
@@ -527,6 +529,8 @@ class Bot:
         if event != cv2.EVENT_LBUTTONDOWN:
             return
         hit = overlay.hit_test(x, y)
+        if hit is None:
+            return
         if hit == "attack_bot":
             self._toggle_attack_style("bot")
         elif hit == "attack_human":
@@ -571,10 +575,101 @@ class Bot:
             self._toggle_cyan_avoid(False)
         elif hit == "cyan_avoid_on":
             self._toggle_cyan_avoid(True)
-        elif hit and (
-            hit.endswith("_dec") or hit.endswith("_inc")
-        ):
+        elif hit.endswith("_dec") or hit.endswith("_inc"):
             self._apply_overlay_stepper(hit)
+        else:
+            return
+        self._overlay_dirty = True
+
+    def _overlay_render_kwargs(self, *, hp: float, adren: float,
+                               fighting: bool, reason: str, score: float,
+                               status: str, status_colour, eat_threshold: float,
+                               ability_keys: list, target_count: int,
+                               click_in_s: float | None, probe_mode: bool,
+                               under_attack: bool, now: float) -> dict:
+        """Build overlay.render kwargs from live cfg + latest vitals."""
+        tcfg = self.cfg.get("targeting") or {}
+        lcfg = self.cfg.get("loot") or {}
+        bcfg = self.cfg.get("bury") or {}
+        return dict(
+            hp=hp, adren=adren, fighting=fighting, reason=reason,
+            score=score, status=status, status_colour=status_colour,
+            last_action=self._last_action, eat_threshold=eat_threshold,
+            dry_run=self.dry_run, ability_keys=ability_keys,
+            eat_suspended=self._eat_suspended,
+            eat_failures=self._eat_failures,
+            target_count=target_count,
+            click_in_s=click_in_s,
+            attack_style=self._attack_style(),
+            attack_method=self._attack_method(),
+            eat_mode=self._eat_mode(),
+            loot_mode=self._loot_mode(),
+            loot_use_inv=self._loot_use_inv(),
+            bury_mode=self._bury_mode(),
+            free_require_still=self._free_require_still(),
+            quit_on_eat_fail=self._quit_on_eat_fail(),
+            cyan_avoid_enabled=self._cyan_avoid_enabled(),
+            cyan_avoid_size_px=float(tcfg.get("cyan_avoid_size_px", 100)),
+            retarget_cooldown_s=tcfg.get("retarget_cooldown_s", [4.5, 6.0]),
+            free_max_bar_hold_s=float(tcfg.get("free_max_bar_hold_s", 40.0)),
+            static_still_s=float(tcfg.get(
+                "static_still_s", static_target.DEFAULT_STILL_S)),
+            target_bar_arm_s=float(tcfg.get("target_bar_arm_s", 3.0)),
+            loot_interval_s=lcfg.get("always_interval_s", [2.0, 5.0]),
+            bury_interval_s=bcfg.get("always_interval_s", [2.0, 5.0]),
+            probe_mode=probe_mode,
+            under_attack=under_attack,
+            kills=self._kills,
+            kills_per_hour=self._kills_per_hour(now),
+        )
+
+    def _redraw_overlay_now(self) -> None:
+        """Immediate panel refresh after a toggle/stepper click (no input pump)."""
+        if not self._overlay_ready or not self._overlay_cache:
+            return
+        base = self._overlay_cache
+        kw = self._overlay_render_kwargs(
+            hp=float(base.get("hp", 1.0)),
+            adren=float(base.get("adren", 0.0)),
+            fighting=bool(base.get("fighting", False)),
+            reason=str(base.get("reason", "")),
+            score=float(base.get("score", 0.0)),
+            status=str(base.get("status", "RUNNING")),
+            status_colour=base.get("status_colour", (90, 235, 90)),
+            eat_threshold=float(base.get("eat_threshold", 0.5)),
+            ability_keys=list(base.get("ability_keys") or []),
+            target_count=int(base.get("target_count", 0)),
+            click_in_s=base.get("click_in_s"),
+            probe_mode=bool(base.get("probe_mode", False)),
+            under_attack=bool(base.get("under_attack", False)),
+            now=time.time(),
+        )
+        cv2.imshow("RS3 bot", overlay.render(**kw))
+        self._overlay_cache = kw
+        self._overlay_dirty = False
+
+    def _pump_overlay_idle(self, seconds: float) -> None:
+        """Sleep while polling overlay clicks — only for tick-idle remainder.
+
+        Does not run during mouse-move / eat delays (that path made the bot
+        crawl when waitKey was pumped inside every action).
+        """
+        if not self._overlay_ready or seconds <= 0:
+            if seconds > 0:
+                time.sleep(seconds)
+            return
+        deadline = time.monotonic() + float(seconds)
+        while not self.stop:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                break
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("q"):
+                self.stop = True
+                break
+            if self._overlay_dirty:
+                self._redraw_overlay_now()
+            time.sleep(min(0.05, left))
 
     # ---------- reading ----------
 
@@ -1569,9 +1664,11 @@ class Bot:
         click_in: float | None = None
 
         if show:
-            cv2.namedWindow("RS3 bot")
+            cv2.namedWindow("RS3 bot", cv2.WINDOW_AUTOSIZE)
             cv2.setMouseCallback("RS3 bot", self._on_overlay_mouse)
             self._overlay_ready = True
+            self._overlay_dirty = False
+            self._overlay_cache = {}
 
         while not self.stop:
             tick = time.time()
@@ -1640,70 +1737,57 @@ class Bot:
                         mode=self.cfg.get("key_mode", "hid"), pid=win.pid)
 
             if show:
-                tcfg = self.cfg.get("targeting") or {}
-                lcfg = self.cfg.get("loot") or {}
-                bcfg = self.cfg.get("bury") or {}
-                cv2.imshow("RS3 bot", overlay.render(
+                now_ui = time.time()
+                kw = self._overlay_render_kwargs(
                     hp=hp, adren=adren, fighting=fighting, reason=reason,
                     score=score, status=status, status_colour=colour,
-                    last_action=self._last_action, eat_threshold=threshold,
-                    dry_run=self.dry_run, ability_keys=ability_keys,
-                    eat_suspended=self._eat_suspended,
-                    eat_failures=self._eat_failures,
+                    eat_threshold=threshold, ability_keys=ability_keys,
                     target_count=target_count if win else self._target_count,
-                    click_in_s=click_in,
-                    attack_style=self._attack_style(),
-                    attack_method=self._attack_method(),
-                    eat_mode=self._eat_mode(),
-                    loot_mode=self._loot_mode(),
-                    loot_use_inv=self._loot_use_inv(),
-                    bury_mode=self._bury_mode(),
-                    free_require_still=self._free_require_still(),
-                    quit_on_eat_fail=self._quit_on_eat_fail(),
-                    cyan_avoid_enabled=self._cyan_avoid_enabled(),
-                    cyan_avoid_size_px=float(
-                        tcfg.get("cyan_avoid_size_px", 100)),
-                    retarget_cooldown_s=tcfg.get(
-                        "retarget_cooldown_s", [4.5, 6.0]),
-                    free_max_bar_hold_s=float(
-                        tcfg.get("free_max_bar_hold_s", 40.0)),
-                    static_still_s=float(tcfg.get(
-                        "static_still_s", static_target.DEFAULT_STILL_S)),
-                    target_bar_arm_s=float(
-                        tcfg.get("target_bar_arm_s", 3.0)),
-                    loot_interval_s=lcfg.get(
-                        "always_interval_s", [2.0, 5.0]),
-                    bury_interval_s=bcfg.get(
-                        "always_interval_s", [2.0, 5.0]),
-                    probe_mode=self._use_probes,
-                    under_attack=under_attack,
-                    kills=self._kills,
-                    kills_per_hour=self._kills_per_hour(tick)))
+                    click_in_s=click_in, probe_mode=self._use_probes,
+                    under_attack=under_attack, now=now_ui,
+                )
+                self._overlay_cache = kw
+                cv2.imshow("RS3 bot", overlay.render(**kw))
+                self._overlay_dirty = False
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord("q"):
                     self.stop = True
                 elif key == ord("b"):
                     self._toggle_attack_style()
+                    self._overlay_dirty = True
                 elif key == ord("m"):
                     self._toggle_attack_method()
+                    self._overlay_dirty = True
                 elif key == ord("e"):
                     self._toggle_eat_mode()
+                    self._overlay_dirty = True
                 elif key == ord("o"):
                     self._toggle_loot_mode()
+                    self._overlay_dirty = True
                 elif key == ord("i"):
                     self._toggle_loot_use_inv()
+                    self._overlay_dirty = True
                 elif key == ord("u"):
                     self._toggle_bury_mode()
+                    self._overlay_dirty = True
                 elif key == ord("s"):
                     self._toggle_free_require_still()
+                    self._overlay_dirty = True
                 elif key == ord("f"):
                     self._toggle_quit_on_eat_fail()
+                    self._overlay_dirty = True
                 elif key == ord("c"):
                     self._toggle_cyan_avoid()
+                    self._overlay_dirty = True
+                if self._overlay_dirty:
+                    self._redraw_overlay_now()
 
             slept = time.time() - tick
             if slept < period:
-                time.sleep(period - slept)
+                if show:
+                    self._pump_overlay_idle(period - slept)
+                else:
+                    time.sleep(period - slept)
 
         if show or show_aoi:
             cv2.destroyAllWindows()
