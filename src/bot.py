@@ -925,8 +925,9 @@ class Bot:
                          ) -> tuple[int, float | None]:
         """Visible-area colour clicks with optional stillness + target-bar gates.
 
-        No cyan marker / fence. When ``free_require_still`` is off, raw blobs
-        are clickable; when on, only still blobs count. Pre-click verify stays.
+        No cyan marker / fence. Colour-match clusters (free_min_match_area).
+        When ``free_require_still`` is off, raw matches are clickable; when on,
+        only still ones count. Pre-click verify stays.
         """
         tcfg = self.cfg.get("targeting") or {}
         if not tcfg.get("enabled", False):
@@ -1155,7 +1156,7 @@ class Bot:
         if pick is None or not allow_click or not self._attack_enabled():
             return self._target_count, click_in
 
-        why = f"free static densest of {len(found)} (area={pick.area})"
+        why = f"free nearest of {len(found)} (area={pick.area})"
         was_force = self._free_force_retarget
         clicked = self._click(pick.x, pick.y, win, why)
         if not clicked:
@@ -1468,8 +1469,8 @@ class Bot:
                 print(f"Free method: visible colours + still ~{still:.1f}s + target-bar "
                       "(no cyan marker / fence).")
             else:
-                print("Free method: visible colours + target-bar (still wait off; "
-                      "pre-click pixel verify on).")
+                print("Free method: colour-match on playfield + target-bar "
+                      "(no morph/density; still wait off; pre-click verify on).")
         if self._attack_style() == "human":
             print("Human mouse: curved clicks + wander while TARGET BAR / COOLDOWN.")
             print("  → Click the RuneScape window so it is frontmost, or movement is paused.")

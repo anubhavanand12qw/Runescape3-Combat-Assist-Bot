@@ -356,6 +356,8 @@
     "min_blob_area": 180,
     "max_blob_area": 25000,
     "relative_area_frac": 0.35,
+    "free_min_match_area": 12,
+    "free_max_match_area": 25000,
     "color_tolerance": 16,
     "exclude_tolerance": 22,
     "zombie_colors_bgr": [

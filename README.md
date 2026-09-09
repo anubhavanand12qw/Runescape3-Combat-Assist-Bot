@@ -127,7 +127,7 @@ python3 run.py              # for real
 3. At runtime the bot finds the V every frame (template + cyan mask **inside** your search box) and **rebuilds the green fence** around it.  
 4. Walk around the room → fence follows the floor marker. Leave the marker → fence lost → no random clicks on chat/minimap.
 
-**Method → free** skips the marker/fence and clicks colour blobs in the visible playfield, still gated by the target-bar probe.
+**Method → free** skips the marker/fence and clicks colour matches in the visible playfield (no morph / density filter; small `free_min_match_area`), still gated by the target-bar probe. `pixel` / `static` keep the denser blob pipeline.
 
 Re-run `mark.py` after big zoom / camera changes.
 
@@ -213,6 +213,7 @@ Edit `config.json` after first save (or copy from `config.default.json`). Overla
 | `targeting.target_bar_arm_s` | Seconds to wait for bar after a click |
 | `targeting.retarget_cooldown_s` | `[lo, hi]` watch after bar clears (e.g. `[4.5, 6]`) |
 | `targeting.free_max_bar_hold_s` | Free-mode hard hold before force retarget |
+| `targeting.free_min_match_area` | Free only: min colour-cluster size (default 12; zoom-out friendly) |
 | `targeting.static_still_s` | Stillness seconds (static method; free if Free still on) |
 | `targeting.click_nearest` | Prefer nearest-to-centre blob |
 | `behavior.attack_style` | `bot` \| `human` \| `off` |

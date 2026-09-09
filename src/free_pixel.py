@@ -1,10 +1,15 @@
 """Free pixel click — mark.py colours on the visible game view.
 
 No cyan-marker fence / AOI crop. Still requires:
-* blob stillness (same ``static_still_s`` as Method → static)
+* optional blob stillness (same ``static_still_s`` as Method → static)
 * target-bar arm / hold / retarget cooldown (wired in the bot tick)
 
 Used only when ``behavior.attack_method`` is ``free``.
+
+Detection (free-only): colour-tolerance match on the playfield — no morphology
+and no relative “concentration” filter. Tiny matching clusters still count so
+zoom-out works. ``pixel`` / ``static`` keep the denser blob pipeline in
+``targets.py``.
 """
 
 from __future__ import annotations
@@ -18,6 +23,9 @@ from . import aoi as aoi_mod
 from .targets import Target, largest, nearest, zombie_mask
 
 DEFAULT_CLICK_COOLDOWN_S = 1.6
+# Free zoom-out: enemies can be << min_blob_area (180) used by pixel/static.
+_DEFAULT_FREE_MIN_MATCH_AREA = 12
+_DEFAULT_FREE_MAX_MATCH_AREA = 25000
 
 
 @dataclass
@@ -55,7 +63,11 @@ def find_visible_targets(
     win,
     cfg: dict | None = None,
 ) -> list[Target]:
-    """Detect colour blobs on the visible playfield (absolute screen coords).
+    """Detect colour-matched clusters on the visible playfield (screen coords).
+
+    Free path only: tolerance colour mask → connected components (no morph,
+    no relative-area concentration). Uses ``free_min_match_area`` (default 12)
+    instead of ``min_blob_area`` so zoomed-out NPCs still register.
 
     Args:
         frame_bgr: Game-window capture (window-local pixels).
@@ -63,7 +75,7 @@ def find_visible_targets(
         cfg: Bot config (uses ``targeting.*`` colours from mark.py).
 
     Returns:
-        Targets in absolute screen coordinates, densest-first friendly.
+        Targets in absolute screen coordinates for nearest-to-center pick.
     """
     if frame_bgr is None or frame_bgr.size == 0:
         return []
@@ -72,14 +84,14 @@ def find_visible_targets(
         return []
 
     h, w = frame_bgr.shape[:2]
-    min_area = int(tcfg.get("min_blob_area", 180))
-    max_area = int(tcfg.get("max_blob_area", 25000))
-    rel_frac = float(tcfg.get("relative_area_frac", 0.35))
+    min_area = int(tcfg.get("free_min_match_area", _DEFAULT_FREE_MIN_MATCH_AREA))
+    max_area = int(tcfg.get("free_max_match_area",
+                             tcfg.get("max_blob_area", _DEFAULT_FREE_MAX_MATCH_AREA)))
 
     mask = zombie_mask(frame_bgr, cfg) & _visible_mask((h, w), cfg)
-    kernel = np.ones((3, 3), np.uint8)
-    cleaned = cv2.morphologyEx(mask.astype(np.uint8) * 255, cv2.MORPH_OPEN, kernel)
-    cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, kernel)
+    # No MORPH_OPEN/CLOSE — open erases zoomed-out enemies; concentration
+    # filtering (relative_area_frac) is intentionally skipped for free.
+    cleaned = (mask.astype(np.uint8) * 255)
 
     n, _labels, stats, centroids = cv2.connectedComponentsWithStats(cleaned, 8)
     ox, oy = int(win.x), int(win.y)
@@ -98,16 +110,11 @@ def find_visible_targets(
         if aoi_mod.point_in_deadzone(cx, cy, ax, ay, dz):
             continue
         found.append(Target(x=cx, y=cy, area=area))
-
-    if len(found) >= 2 and rel_frac > 0:
-        biggest = max(t.area for t in found)
-        floor = int(biggest * rel_frac)
-        found = [t for t in found if t.area >= floor]
     return found
 
 
 def pick_target(found: list[Target], win, cfg: dict | None = None) -> Target | None:
-    """Choose nearest-to-center blob (or densest if ``click_nearest`` is false)."""
+    """Choose nearest-to-center match (or densest if ``click_nearest`` is false)."""
     tcfg = (cfg or {}).get("targeting") or {}
     if tcfg.get("click_nearest", True):
         ax = int(win.x) + int(win.width) // 2
