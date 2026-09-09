@@ -112,6 +112,7 @@ python3 run.py              # for real
 | Overlay **Inv box** | `off` = Space only · `on` = always also uses loot probes (`l`/`i`) |
 | Overlay **Free still** | `off` by default — skip 2s stillness in free mode (pre-click pixel verify still runs) |
 | Overlay **Cyan avoid** | `off` by default — before click, skip aim if cyan in `Cyan box` (default 100×100); hotkey `c` |
+| Overlay **Rotate** | `off` by default — Right Arrow hold (`Rot hold` 0.5–2s) every `Rot gap` (3–10s); hotkey `r` |
 | Overlay **+/−** | Bar wait, hard hold, still time, bar arm, loot gap, bury gap — persisted to `config.json` |
 | Overlay **kills / hr** | Target-bar clear count this session |
 | `b` / `m` / `e` / `o` / `i` / `u` / `s` | Cycle attack / method / eat / loot / inv / bury / free still |
@@ -217,6 +218,9 @@ Edit `config.json` after first save (or copy from `config.default.json`). Overla
 | `targeting.free_min_match_area` | Free only: min colour-cluster size (default 12; zoom-out friendly) |
 | `targeting.cyan_avoid_enabled` | Pre-click: abort if cyan trap colour in `cyan_avoid_size_px` box (default off) |
 | `targeting.cyan_avoid_size_px` | Cyan check window (default 100 → 100×100) |
+| `behavior.rotate_screen` | Periodic camera rotate via Right Arrow (default off) |
+| `targeting.rotate_interval_s` | Seconds between rotates (`[lo, hi]`, default 3–10) |
+| `targeting.rotate_hold_s` | Right Arrow hold (`[lo, hi]`, default 0.5–2) |
 | `targeting.static_still_s` | Stillness seconds (static method; free if Free still on) |
 | `targeting.click_nearest` | Prefer nearest-to-centre blob |
 | `behavior.attack_style` | `bot` \| `human` \| `off` |

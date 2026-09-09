@@ -27,6 +27,8 @@ KEYCODES: dict[str, int] = {
     "-": 27, "=": 24,
     "[": 33, "]": 30,
     "space": 49,
+    # Arrow keys (camera rotate etc.)
+    "left": 123, "right": 124, "down": 125, "up": 126,
 }
 
 # How long a key stays held down, in seconds. Randomised inside this range so the
@@ -61,21 +63,38 @@ def _post(event, mode: str, pid: int | None) -> None:
 def press(key: str, mode: str = "hid", pid: int | None = None,
           hold: float | None = None) -> None:
     """Tap a single key. `key` is one of the characters in KEYCODES."""
+    key_down(key, mode=mode, pid=pid)
+    time.sleep(hold if hold is not None else random.uniform(*HOLD_RANGE))
+    key_up(key, mode=mode, pid=pid)
+
+
+def key_down(key: str, mode: str = "hid", pid: int | None = None) -> None:
+    """Press and hold a key (no release). Pair with ``key_up``."""
     try:
         code = KEYCODES[key]
     except KeyError:
         raise KeySenderError(
-            f"key {key!r} is not mapped; known keys: {''.join(KEYCODES)}"
+            f"key {key!r} is not mapped; known keys: {', '.join(sorted(KEYCODES))}"
         ) from None
-
     source = Quartz.CGEventSourceCreate(
         Quartz.kCGEventSourceStateHIDSystemState
     )
     down = Quartz.CGEventCreateKeyboardEvent(source, code, True)
-    up = Quartz.CGEventCreateKeyboardEvent(source, code, False)
-
     _post(down, mode, pid)
-    time.sleep(hold if hold is not None else random.uniform(*HOLD_RANGE))
+
+
+def key_up(key: str, mode: str = "hid", pid: int | None = None) -> None:
+    """Release a key previously held with ``key_down``."""
+    try:
+        code = KEYCODES[key]
+    except KeyError:
+        raise KeySenderError(
+            f"key {key!r} is not mapped; known keys: {', '.join(sorted(KEYCODES))}"
+        ) from None
+    source = Quartz.CGEventSourceCreate(
+        Quartz.kCGEventSourceStateHIDSystemState
+    )
+    up = Quartz.CGEventCreateKeyboardEvent(source, code, False)
     _post(up, mode, pid)
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-W, H = 430, 764
+W, H = 430, 860
 BG = (24, 22, 20)
 
 # Clickable toggle hit-boxes (x0, y0, x1, y1) in overlay pixels.
@@ -25,6 +25,10 @@ HIT_STILL_S = (8, 614, 420, 642)
 HIT_ARM = (8, 644, 420, 672)
 HIT_LOOT_GAP = (8, 674, 420, 702)
 HIT_BURY_GAP = (8, 704, 420, 732)
+# Appended below existing rows so prior hit-zones stay unchanged.
+HIT_ROTATE = (8, 736, 420, 766)       # camera rotate via Right Arrow
+HIT_ROT_GAP = (8, 768, 420, 796)      # seconds between rotates
+HIT_ROT_HOLD = (8, 800, 420, 828)     # Right Arrow hold duration
 
 _ATTACK_OPTS = ("bot", "human", "off")
 _METHOD_OPTS = ("pixel", "static", "free")
@@ -175,6 +179,10 @@ def hit_test(x: int, y: int) -> str | None:
             and HIT_CYAN_AVOID[1] <= y <= HIT_CYAN_AVOID[3]):
         mid = (HIT_CYAN_AVOID[0] + HIT_CYAN_AVOID[2]) // 2
         return "cyan_avoid_off" if x < mid else "cyan_avoid_on"
+    if (HIT_ROTATE[0] <= x <= HIT_ROTATE[2]
+            and HIT_ROTATE[1] <= y <= HIT_ROTATE[3]):
+        mid = (HIT_ROTATE[0] + HIT_ROTATE[2]) // 2
+        return "rotate_off" if x < mid else "rotate_on"
     for name, hit in (
         ("cyan_sz", HIT_CYAN_SZ),
         ("cd", HIT_CD),
@@ -183,6 +191,8 @@ def hit_test(x: int, y: int) -> str | None:
         ("arm", HIT_ARM),
         ("loot_gap", HIT_LOOT_GAP),
         ("bury_gap", HIT_BURY_GAP),
+        ("rot_gap", HIT_ROT_GAP),
+        ("rot_hold", HIT_ROT_HOLD),
     ):
         if hit[0] <= x <= hit[2] and hit[1] <= y <= hit[3]:
             direction = _stepper_dir(hit, x)
@@ -205,6 +215,9 @@ def render(*, hp: float, adren: float, fighting: bool, reason: str,
            quit_on_eat_fail: bool = False,
            cyan_avoid_enabled: bool = False,
            cyan_avoid_size_px: float = 100.0,
+           rotate_screen: bool = False,
+           rotate_interval_s: list | tuple = (3.0, 10.0),
+           rotate_hold_s: list | tuple = (0.5, 2.0),
            retarget_cooldown_s: list | tuple | float = (4.5, 6.0),
            free_max_bar_hold_s: list | tuple | float = (30.0, 40.0),
            static_still_s: float = 2.0,
@@ -308,7 +321,11 @@ def render(*, hp: float, adren: float, fighting: bool, reason: str,
     _stepper_row(c, HIT_ARM[1], "Bar arm", f"{float(target_bar_arm_s):.1f}s")
     _stepper_row(c, HIT_LOOT_GAP[1], "Loot gap", _pair_txt(loot_interval_s))
     _stepper_row(c, HIT_BURY_GAP[1], "Bury gap", _pair_txt(bury_interval_s))
+    _checkbox_row(c, HIT_ROTATE[1], "Rotate", "off", "on",
+                  left_on=(not rotate_screen))
+    _stepper_row(c, HIT_ROT_GAP[1], "Rot gap", _pair_txt(rotate_interval_s))
+    _stepper_row(c, HIT_ROT_HOLD[1], "Rot hold", _pair_txt(rotate_hold_s))
 
-    cv2.putText(c, "b/m/e/o/i/u/s/f/c  steppers=[-/+]  q=quit",
+    cv2.putText(c, "b/m/e/o/i/u/s/f/c/r  steppers=[-/+]  q=quit",
                 (12, H - 8), f, 0.32, (120, 120, 120), 1)
     return c

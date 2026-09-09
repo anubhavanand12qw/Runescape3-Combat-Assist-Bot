@@ -39,7 +39,7 @@
   "overlay": true,
   "aoi_overlay": true,
   "behavior": {
-    "_comment": "Overlay: b/m/e/o/i/u/s/f. attack_method: pixel|static|free. free_require_still: false=click blobs without 2s wait (pre-click pixel verify still runs). bury_mode: off|after_combat|always. quit_on_eat_fail: stop bot after eat fail \u00d7eat_max_failures.",
+    "_comment": "Overlay: b/m/e/o/i/u/s/f/c/r. attack_method: pixel|static|free. free_require_still: false=click blobs without 2s wait (pre-click pixel verify still runs). bury_mode: off|after_combat|always. quit_on_eat_fail: stop bot after eat fail \u00d7eat_max_failures. rotate_screen: Right Arrow camera spin.",
     "attack_style": "human",
     "attack_method": "free",
     "eat_mode": "in_combat",
@@ -47,7 +47,8 @@
     "loot_use_inv": false,
     "bury_mode": "off",
     "free_require_still": false,
-    "quit_on_eat_fail": false
+    "quit_on_eat_fail": false,
+    "rotate_screen": false
   },
   "loot": {
     "_comment": "after_combat/target: Space when target bar clears. always: Space every always_interval_s (random). always + loot_use_inv true: probe-gated with same gap.",
@@ -344,8 +345,8 @@
       2.0
     ],
     "free_max_bar_hold_s": [
-      3.0,
-      5.0
+      1.5,
+      3.0
     ],
     "free_force_delay_s": [
       0.25,
@@ -357,6 +358,15 @@
     "cyan_avoid_enabled": false,
     "cyan_avoid_size_px": 100,
     "cyan_avoid_min_pixels": 60,
+    "rotate_interval_s": [
+      3.0,
+      10.0
+    ],
+    "rotate_hold_s": [
+      0.5,
+      2.0
+    ],
+    "rotate_key": "right",
     "static_still_s": 1.5,
     "static_match_radius_px": 28,
     "min_blob_area": 180,

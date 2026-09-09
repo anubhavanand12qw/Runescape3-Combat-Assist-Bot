@@ -102,6 +102,10 @@ class Bot:
     _kills: int = field(default=0, init=False)
     _session_summary_printed: bool = field(default=False, init=False)
     _click_abort_reason: str = field(default="", init=False)
+    # Camera rotate (Right Arrow): non-blocking press/release schedule.
+    _rotate_held: bool = field(default=False, init=False)
+    _rotate_release_at: float = field(default=-1e9, init=False)
+    _next_rotate_at: float = field(default=0.0, init=False)
 
     def __post_init__(self) -> None:
         self._grab = capture.Grabber()
@@ -145,6 +149,7 @@ class Bot:
         self.cfg["behavior"].setdefault("bury_mode", "off")
         self.cfg["behavior"].setdefault("free_require_still", False)
         self.cfg["behavior"].setdefault("quit_on_eat_fail", False)
+        self.cfg["behavior"].setdefault("rotate_screen", False)
         self.cfg.setdefault("loot", {})
         self.cfg.setdefault("bury", {})
         self.cfg.setdefault("targeting", {})
@@ -152,6 +157,9 @@ class Bot:
         t0.setdefault("cyan_avoid_enabled", False)
         t0.setdefault("cyan_avoid_size_px", 100)
         t0.setdefault("cyan_avoid_min_pixels", 60)
+        t0.setdefault("rotate_interval_s", [3.0, 10.0])
+        t0.setdefault("rotate_hold_s", [0.5, 2.0])
+        t0.setdefault("rotate_key", "right")
         self._human = human.HumanSession(cfg=dict(self.cfg.get("human") or {}))
 
         Path("logs").mkdir(exist_ok=True)
@@ -204,6 +212,10 @@ class Bot:
         """Pre-click cyan trap reject — only while attack is on."""
         return bool((self.cfg.get("targeting") or {}).get(
             "cyan_avoid_enabled", False))
+
+    def _rotate_screen(self) -> bool:
+        """When True, periodically hold Right Arrow to spin the camera."""
+        return bool(self._behavior().get("rotate_screen", False))
 
     def _is_human(self) -> bool:
         return self._attack_style() == "human"
@@ -469,6 +481,24 @@ class Bot:
               + (f" ({size}×{size}px before click)" if on else ""))
         self._persist_targeting()
 
+    def _toggle_rotate_screen(self, force: bool | None = None) -> None:
+        b = self._behavior()
+        if force is None:
+            b["rotate_screen"] = not self._rotate_screen()
+        else:
+            b["rotate_screen"] = bool(force)
+        on = bool(b["rotate_screen"])
+        self._last_action = f"rotate → {'on' if on else 'off'}"
+        print(f"Rotate screen: {'on' if on else 'off'}"
+              + (" (Right Arrow, random gap/hold)" if on else ""))
+        if not on:
+            self._rotate_release_now()
+        else:
+            # First spin after a short random wait — not immediately.
+            self._next_rotate_at = time.time() + self._roll_targeting_range(
+                "rotate_interval_s", default=(3.0, 10.0))
+        self._persist_behavior()
+
     def _apply_overlay_stepper(self, hit: str) -> None:
         """Handle −/+ overlay hits for free timers and loot/bury gaps."""
         tcfg = self.cfg.setdefault("targeting", {})
@@ -546,6 +576,30 @@ class Bot:
                 lo_min=0.5, hi_max=20.0)
             self._persist_bury()
             self._last_action = f"bury gap → {bcfg['always_interval_s']}"
+        elif hit == "rot_gap_dec":
+            tcfg["rotate_interval_s"] = self._nudge_pair(
+                tcfg.get("rotate_interval_s", [3.0, 10.0]), -0.5,
+                lo_min=1.0, hi_max=60.0)
+            self._persist_targeting()
+            self._last_action = f"rot gap → {tcfg['rotate_interval_s']}"
+        elif hit == "rot_gap_inc":
+            tcfg["rotate_interval_s"] = self._nudge_pair(
+                tcfg.get("rotate_interval_s", [3.0, 10.0]), 0.5,
+                lo_min=1.0, hi_max=60.0)
+            self._persist_targeting()
+            self._last_action = f"rot gap → {tcfg['rotate_interval_s']}"
+        elif hit == "rot_hold_dec":
+            tcfg["rotate_hold_s"] = self._nudge_pair(
+                tcfg.get("rotate_hold_s", [0.5, 2.0]), -0.1,
+                lo_min=0.2, hi_max=5.0)
+            self._persist_targeting()
+            self._last_action = f"rot hold → {tcfg['rotate_hold_s']}"
+        elif hit == "rot_hold_inc":
+            tcfg["rotate_hold_s"] = self._nudge_pair(
+                tcfg.get("rotate_hold_s", [0.5, 2.0]), 0.1,
+                lo_min=0.2, hi_max=5.0)
+            self._persist_targeting()
+            self._last_action = f"rot hold → {tcfg['rotate_hold_s']}"
         else:
             return
         print(self._last_action)
@@ -600,6 +654,10 @@ class Bot:
             self._toggle_cyan_avoid(False)
         elif hit == "cyan_avoid_on":
             self._toggle_cyan_avoid(True)
+        elif hit == "rotate_off":
+            self._toggle_rotate_screen(False)
+        elif hit == "rotate_on":
+            self._toggle_rotate_screen(True)
         elif hit.endswith("_dec") or hit.endswith("_inc"):
             self._apply_overlay_stepper(hit)
         else:
@@ -635,6 +693,9 @@ class Bot:
             quit_on_eat_fail=self._quit_on_eat_fail(),
             cyan_avoid_enabled=self._cyan_avoid_enabled(),
             cyan_avoid_size_px=float(tcfg.get("cyan_avoid_size_px", 100)),
+            rotate_screen=self._rotate_screen(),
+            rotate_interval_s=tcfg.get("rotate_interval_s", [3.0, 10.0]),
+            rotate_hold_s=tcfg.get("rotate_hold_s", [0.5, 2.0]),
             retarget_cooldown_s=tcfg.get("retarget_cooldown_s", [4.5, 6.0]),
             free_max_bar_hold_s=self._free_max_bar_hold_cfg(),
             static_still_s=float(tcfg.get(
@@ -1099,6 +1160,73 @@ class Bot:
         if is_clear_bury and self._loot_bar_cleared_at is not None:
             self._bury_handled_clear_at = self._loot_bar_cleared_at
         return pick
+
+    def _rotate_key_name(self) -> str:
+        key = str((self.cfg.get("targeting") or {}).get(
+            "rotate_key", "right")).strip().lower()
+        return key if key in keys.KEYCODES else "right"
+
+    def _rotate_release_now(self, win=None) -> None:
+        """Ensure Right Arrow is up (safe if already released)."""
+        if not self._rotate_held:
+            return
+        if not self.dry_run and win is not None:
+            mode = self.cfg.get("key_mode", "hid")
+            try:
+                keys.key_up(self._rotate_key_name(), mode=mode, pid=win.pid)
+            except keys.KeySenderError:
+                pass
+        self._rotate_held = False
+        self._rotate_release_at = -1e9
+
+    def _maybe_rotate(self, win, now: float) -> str | None:
+        """Non-blocking camera spin: Right Arrow down → hold → up.
+
+        Gap between spins: ``targeting.rotate_interval_s`` (default 3–10s).
+        Hold duration: ``targeting.rotate_hold_s`` (default 0.5–2s).
+        Skips while paused / not frontmost / eat SAFE STOP; never blocks the
+        main loop for the hold duration.
+        """
+        if self._rotate_held:
+            if now >= self._rotate_release_at:
+                if self.dry_run:
+                    self._last_action = (
+                        f"[dry run] would release {self._rotate_key_name()} "
+                        "(rotate)")
+                elif win is not None:
+                    mode = self.cfg.get("key_mode", "hid")
+                    keys.key_up(self._rotate_key_name(), mode=mode, pid=win.pid)
+                self._rotate_held = False
+                gap = self._roll_targeting_range(
+                    "rotate_interval_s", default=(3.0, 10.0))
+                self._next_rotate_at = now + gap
+                self._last_action = (
+                    f"rotate release → next in {gap:.1f}s")
+                return "rotate_up"
+            return None
+
+        if not self._rotate_screen():
+            return None
+        if win is None or self.paused:
+            return None
+        if self._eat_suspended:
+            return None
+        if now < self._next_rotate_at:
+            return None
+
+        hold = self._roll_targeting_range(
+            "rotate_hold_s", default=(0.5, 2.0))
+        key = self._rotate_key_name()
+        if self.dry_run:
+            self._last_action = (
+                f"[dry run] would hold {key} {hold:.1f}s (rotate)")
+        else:
+            mode = self.cfg.get("key_mode", "hid")
+            keys.key_down(key, mode=mode, pid=win.pid)
+            self._last_action = f"rotate hold {key} {hold:.1f}s"
+        self._rotate_held = True
+        self._rotate_release_at = now + hold
+        return "rotate_down"
 
     def _free_pixel_tick(self, win, now: float, show_aoi: bool,
                          hp: float = 1.0,
@@ -1635,16 +1763,19 @@ class Bot:
         targeting_on = (self.cfg.get("targeting") or {}).get("enabled", False)
 
         print("Bot running.  F12 = pause/resume,  Esc x3 = stop,  Ctrl-C = stop")
-        print("Overlay: click Attack/Method/Eat/Loot/Bury/Inv/Still/Food quit/Cyan +/−, "
-              "or b / m / e / o / i / u / s / f / c  (q = quit)")
+        print("Overlay: click Attack/Method/Eat/Loot/Bury/Inv/Still/Food quit/Cyan/Rotate +/−, "
+              "or b / m / e / o / i / u / s / f / c / r  (q = quit)")
         print("Kills = target-bar clear count (session); shown on overlay as kills/hr.")
         print("Food quit off = SAFE STOP pause only; on = print kills and exit after "
               f"eat fail ×{int(self.cfg.get('eat_max_failures', 2))}.")
         print("Cyan avoid off by default (dungeon cyan tiles false-trigger). "
               "Turn on near real traps; adjust Cyan box if needed.")
+        print("Rotate off by default — on = Right Arrow hold (Rot hold) every Rot gap.")
         self._session_started_at = time.time()
         self._kills = 0
         self._session_summary_printed = False
+        self._next_rotate_at = self._session_started_at + self._roll_targeting_range(
+            "rotate_interval_s", default=(3.0, 10.0))
         if self.dry_run:
             print("DRY RUN: reading everything, pressing/clicking nothing.")
         elif not ability_keys:
@@ -1666,7 +1797,8 @@ class Bot:
               f"  |  Inv box: {'on' if self._loot_use_inv() else 'off'}"
               f"  |  Free still: {'on' if self._free_require_still() else 'off'}"
               f"  |  Food quit: {'on' if self._quit_on_eat_fail() else 'off'}"
-              f"  |  Cyan avoid: {'on' if self._cyan_avoid_enabled() else 'off'}")
+              f"  |  Cyan avoid: {'on' if self._cyan_avoid_enabled() else 'off'}"
+              f"  |  Rotate: {'on' if self._rotate_screen() else 'off'}")
         print("Eat + loot + bury keys always use human timing (pre/hold/post delays).")
         print("Loot target = Space after target bar clears; always = Space every 2–5s random "
               "(Inv box off = no inventory/button probes).")
@@ -1709,6 +1841,7 @@ class Bot:
                 status, colour = "RuneScape is not open", (120, 120, 200)
                 hp = adren = 0.0
                 fighting, reason, score = False, "game closed", 0.0
+                self._rotate_release_now(None)
             elif not window.is_frontmost():
                 status, colour = "PAUSED - game not in front", (0, 190, 255)
                 frame = self._grab.grab(win.region)
@@ -1717,6 +1850,7 @@ class Bot:
                 if not self._use_probes:
                     fighting = self._combat.update(tx_img, ad_img, hp, tick)
                     reason, score = self._combat.last_reason, self._combat.last_score
+                self._rotate_release_now(win)
             elif self.paused:
                 status, colour = "PAUSED (F12 to resume)", (0, 190, 255)
                 frame = self._grab.grab(win.region)
@@ -1725,6 +1859,7 @@ class Bot:
                 if not self._use_probes:
                     fighting = self._combat.update(tx_img, ad_img, hp, tick)
                     reason, score = self._combat.last_reason, self._combat.last_score
+                self._maybe_rotate(win, tick)  # finish any in-flight key-up
             else:
                 status, colour = "RUNNING", (90, 235, 90)
                 frame = self._grab.grab(win.region)
@@ -1753,6 +1888,12 @@ class Bot:
                     self._log.write(json.dumps({
                         "t": round(tick, 3), "action": "bury",
                         "key": bury_key, "dry_run": self.dry_run}) + "\n")
+                rot = self._maybe_rotate(win, tick)
+                if rot:
+                    self._log.write(json.dumps({
+                        "t": round(tick, 3), "action": rot,
+                        "key": self._rotate_key_name(),
+                        "dry_run": self.dry_run}) + "\n")
                 self._skip_support_keys_once = False
                 target_count, click_in = (
                     self._free_pixel_tick(
@@ -1808,6 +1949,9 @@ class Bot:
                 elif key == ord("c"):
                     self._toggle_cyan_avoid()
                     self._overlay_dirty = True
+                elif key == ord("r"):
+                    self._toggle_rotate_screen()
+                    self._overlay_dirty = True
                 if self._overlay_dirty:
                     self._redraw_overlay_now()
 
@@ -1818,6 +1962,7 @@ class Bot:
                 else:
                     time.sleep(period - slept)
 
+        self._rotate_release_now(window.find_game())
         if show or show_aoi:
             cv2.destroyAllWindows()
         self._log.close()

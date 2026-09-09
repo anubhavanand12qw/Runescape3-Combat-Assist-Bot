@@ -39,7 +39,7 @@
   "overlay": true,
   "aoi_overlay": true,
   "behavior": {
-    "_comment": "Overlay: b/m/e/o/i/u/s/f. free_require_still false=no 2s wait (pre-click verify still runs). bury_mode: off|after_combat|always. quit_on_eat_fail: stop bot after eat fail ×eat_max_failures.",
+    "_comment": "Overlay: b/m/e/o/i/u/s/f/c/r. free_require_still false=no 2s wait (pre-click verify still runs). bury_mode: off|after_combat|always. quit_on_eat_fail: stop bot after eat fail ×eat_max_failures. rotate_screen: Right Arrow camera spin.",
     "attack_style": "bot",
     "attack_method": "pixel",
     "eat_mode": "low_hp",
@@ -47,7 +47,8 @@
     "loot_use_inv": false,
     "bury_mode": "off",
     "free_require_still": false,
-    "quit_on_eat_fail": false
+    "quit_on_eat_fail": false,
+    "rotate_screen": false
   },
   "loot": {
     "_comment": "after_combat/target: Space when target bar clears. always: Space every always_interval_s (random). always + loot_use_inv true: probe-gated with same gap. post_combat_delay_s = reaction wait.",
@@ -255,6 +256,9 @@
     "cyan_avoid_enabled": false,
     "cyan_avoid_size_px": 100,
     "cyan_avoid_min_pixels": 60,
+    "rotate_interval_s": [3.0, 10.0],
+    "rotate_hold_s": [0.5, 2.0],
+    "rotate_key": "right",
     "static_still_s": 2.0,
     "static_match_radius_px": 28,
     "min_blob_area": 180,
