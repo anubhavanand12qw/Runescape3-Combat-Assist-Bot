@@ -26,7 +26,7 @@ import numpy as np
 
 from . import (
     aoi, bars, bury, capture, combat, config_util, free_pixel, human, keys, loot,
-    overlay, probes, static_target, targets, window,
+    notify_email, overlay, probes, static_target, targets, window,
 )
 
 
@@ -150,6 +150,8 @@ class Bot:
         self.cfg["behavior"].setdefault("free_require_still", False)
         self.cfg["behavior"].setdefault("quit_on_eat_fail", False)
         self.cfg["behavior"].setdefault("rotate_screen", False)
+        self.cfg.setdefault("alerts", {})
+        self.cfg["alerts"].setdefault("email_on_eat_quit", True)
         self.cfg.setdefault("loot", {})
         self.cfg.setdefault("bury", {})
         self.cfg.setdefault("targeting", {})
@@ -212,6 +214,11 @@ class Bot:
     def _quit_on_eat_fail(self) -> bool:
         """When True, eat fail ×N prints kills and fully stops the bot."""
         return bool(self._behavior().get("quit_on_eat_fail", False))
+
+    def _email_on_eat_quit(self) -> bool:
+        """When True, Food-quit SAFE STOP also sends the session email."""
+        alerts = self.cfg.get("alerts") or {}
+        return bool(alerts.get("email_on_eat_quit", True))
 
     def _cyan_avoid_enabled(self) -> bool:
         """Pre-click cyan trap reject — only while attack is on."""
@@ -987,6 +994,27 @@ class Bot:
                     }) + "\n")
                 except OSError:
                     pass
+                if self._email_on_eat_quit():
+                    started = ""
+                    if self._session_started_at > 0.0:
+                        started = datetime.fromtimestamp(
+                            self._session_started_at).strftime("%Y-%m-%d %H:%M:%S")
+                    stopped = datetime.fromtimestamp(now).strftime(
+                        "%Y-%m-%d %H:%M:%S")
+                    try:
+                        notify_email.send_eat_quit_alert(
+                            kills=self._kills,
+                            kills_per_hour=kph,
+                            elapsed_minutes=elapsed_m,
+                            eat_failures=self._eat_failures,
+                            started_local=started,
+                            stopped_local=stopped,
+                            attack_style=self._attack_style(),
+                            attack_method=self._attack_method(),
+                            last_action=self._last_action,
+                        )
+                    except (OSError, TimeoutError, notify_email.smtplib.SMTPException) as exc:
+                        print(f"WARNING: eat-quit email failed: {exc}")
                 self.stop = True
             else:
                 self._last_action = (

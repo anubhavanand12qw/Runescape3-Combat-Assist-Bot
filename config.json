@@ -50,6 +50,10 @@
     "quit_on_eat_fail": false,
     "rotate_screen": true
   },
+  "alerts": {
+    "_comment": "email_on_eat_quit: mail session summary when Food quit stops the bot. SMTP creds live in .env only.",
+    "email_on_eat_quit": true
+  },
   "loot": {
     "_comment": "after_combat/target: Space when target bar clears. always: Space every always_interval_s (random). always + loot_use_inv true: probe-gated with same gap.",
     "loot_key": "space",

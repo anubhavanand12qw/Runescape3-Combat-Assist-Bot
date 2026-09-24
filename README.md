@@ -224,6 +224,7 @@ Edit `config.json` after first save (or copy from `config.default.json`). Overla
 | `targeting.pre_click_max_snap_px` | Max cursor nudge toward colour centroid (default 3) |
 | `targeting.pre_click_verify_radius_px` | Final pixel-check radius before mouse-down (default 3) |
 | `behavior.rotate_screen` | Periodic camera rotate via Right Arrow (default off) |
+| `alerts.email_on_eat_quit` | When Food quit stops the bot, email the session summary (SMTP in `.env`, default on) |
 | `targeting.rotate_interval_s` | Seconds between rotates (`[lo, hi]`, default 3–10) |
 | `targeting.rotate_hold_s` | Right Arrow hold (`[lo, hi]`, default 0.5–2) |
 | `targeting.static_still_s` | Stillness seconds (static method; free if Free still on) |
